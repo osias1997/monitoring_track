@@ -4,13 +4,29 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Connection Monitor</title>
+  <script>
+    (function () {
+      const saved = localStorage.getItem("cm-theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.setAttribute(
+        "data-theme",
+        saved || (prefersDark ? "dark" : "light")
+      );
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
       --bg: #eef2f4;
+      --bg-glow-a: #d9ebe8;
+      --bg-glow-b: #dfe7ef;
+      --bg-top: #f5f8fa;
       --bg-panel: #fbfcfd;
+      --bg-input: #fff;
+      --bg-stat: #fff;
+      --bg-badge: #f3f6f8;
       --ink: #152028;
       --muted: #5b6b76;
       --line: #d5dee4;
@@ -21,6 +37,61 @@
       --ok: #15803d;
       --listen: #0369a1;
       --shadow: 0 10px 30px rgba(21, 32, 40, 0.06);
+      --stop-bg: #fff;
+      --stop-border: #f1c5c5;
+      --badge-tcp-bg: #e8f1ff;
+      --badge-tcp-border: #c9dbf5;
+      --badge-tcp-ink: #1d4ed8;
+      --badge-udp-bg: #fff0e8;
+      --badge-udp-border: #f0d0b8;
+      --badge-udp-ink: #c2410c;
+      --badge-ok-bg: #e9f8ee;
+      --badge-ok-border: #bfe8cb;
+      --badge-listen-bg: #e7f4fb;
+      --badge-listen-border: #b9daf0;
+      --badge-out-bg: #fff4e7;
+      --badge-out-border: #f0d2a8;
+      --badge-in-border: #b6ddd6;
+      --dot-idle: #94a3b8;
+      --ok-glow: rgba(21, 128, 61, 0.15);
+    }
+
+    html[data-theme="dark"] {
+      --bg: #0f1418;
+      --bg-glow-a: #12312e;
+      --bg-glow-b: #1a2430;
+      --bg-top: #12181d;
+      --bg-panel: #171e24;
+      --bg-input: #10161b;
+      --bg-stat: #12181d;
+      --bg-badge: #1d262e;
+      --ink: #e8eef2;
+      --muted: #9aabb6;
+      --line: #2a353e;
+      --accent: #2dd4bf;
+      --accent-soft: #163833;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --ok: #4ade80;
+      --listen: #38bdf8;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      --stop-bg: #1a2229;
+      --stop-border: #5c3030;
+      --badge-tcp-bg: #152338;
+      --badge-tcp-border: #243a5c;
+      --badge-tcp-ink: #93c5fd;
+      --badge-udp-bg: #2a1c14;
+      --badge-udp-border: #5a3a28;
+      --badge-udp-ink: #fdba74;
+      --badge-ok-bg: #14261b;
+      --badge-ok-border: #245536;
+      --badge-listen-bg: #132430;
+      --badge-listen-border: #23485c;
+      --badge-out-bg: #2a2114;
+      --badge-out-border: #5a4524;
+      --badge-in-border: #2a554e;
+      --dot-idle: #64748b;
+      --ok-glow: rgba(74, 222, 128, 0.18);
     }
 
     * { box-sizing: border-box; }
@@ -30,9 +101,10 @@
       color: var(--ink);
       font-family: "IBM Plex Sans", sans-serif;
       background:
-        radial-gradient(circle at 0% 0%, #d9ebe8 0%, transparent 42%),
-        radial-gradient(circle at 100% 0%, #dfe7ef 0%, transparent 38%),
-        linear-gradient(180deg, #f5f8fa 0%, var(--bg) 100%);
+        radial-gradient(circle at 0% 0%, var(--bg-glow-a) 0%, transparent 42%),
+        radial-gradient(circle at 100% 0%, var(--bg-glow-b) 0%, transparent 38%),
+        linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 100%);
+      transition: background 180ms ease, color 180ms ease;
     }
 
     .wrap {
@@ -61,6 +133,12 @@
       max-width: 42rem;
     }
 
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
     .live-pill {
       display: inline-flex;
       align-items: center;
@@ -73,16 +151,30 @@
       white-space: nowrap;
     }
 
+    .theme-toggle {
+      height: 2.2rem;
+      padding: 0 0.8rem;
+      border: 1px solid var(--line);
+      background: var(--bg-panel);
+      color: var(--ink);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .theme-toggle .icon-moon { display: none; }
+    html[data-theme="dark"] .theme-toggle .icon-sun { display: none; }
+    html[data-theme="dark"] .theme-toggle .icon-moon { display: inline; }
+
     .dot {
       width: 0.55rem;
       height: 0.55rem;
       border-radius: 50%;
-      background: #94a3b8;
+      background: var(--dot-idle);
     }
 
     .dot.on {
       background: var(--ok);
-      box-shadow: 0 0 0 4px rgba(21, 128, 61, 0.15);
+      box-shadow: 0 0 0 4px var(--ok-glow);
       animation: pulse 1.4s ease-in-out infinite;
     }
 
@@ -119,11 +211,16 @@
     input[type="text"] {
       width: 100%;
       border: 1px solid var(--line);
-      background: #fff;
+      background: var(--bg-input);
       color: var(--ink);
       padding: 0.7rem 0.8rem;
       font: inherit;
       font-size: 1rem;
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--muted);
+      opacity: 0.75;
     }
 
     input[type="text"]:focus {
@@ -161,9 +258,9 @@
     }
 
     .btn-stop {
-      background: #fff;
+      background: var(--stop-bg);
       color: var(--danger);
-      border: 1px solid #f1c5c5;
+      border: 1px solid var(--stop-border);
     }
 
     .stats {
@@ -176,7 +273,7 @@
     .stat {
       padding: 0.9rem 1rem;
       border: 1px solid var(--line);
-      background: #fff;
+      background: var(--bg-stat);
     }
 
     .stat span {
@@ -271,15 +368,15 @@
       letter-spacing: 0.03em;
       text-transform: uppercase;
       border: 1px solid var(--line);
-      background: #f3f6f8;
+      background: var(--bg-badge);
     }
 
-    .badge.tcp { background: #e8f1ff; border-color: #c9dbf5; color: #1d4ed8; }
-    .badge.udp { background: #fff0e8; border-color: #f0d0b8; color: #c2410c; }
-    .badge.established { background: #e9f8ee; border-color: #bfe8cb; color: var(--ok); }
-    .badge.listen { background: #e7f4fb; border-color: #b9daf0; color: var(--listen); }
-    .badge.outbound { background: #fff4e7; border-color: #f0d2a8; color: var(--warn); }
-    .badge.inbound { background: var(--accent-soft); border-color: #b6ddd6; color: var(--accent); }
+    .badge.tcp { background: var(--badge-tcp-bg); border-color: var(--badge-tcp-border); color: var(--badge-tcp-ink); }
+    .badge.udp { background: var(--badge-udp-bg); border-color: var(--badge-udp-border); color: var(--badge-udp-ink); }
+    .badge.established { background: var(--badge-ok-bg); border-color: var(--badge-ok-border); color: var(--ok); }
+    .badge.listen { background: var(--badge-listen-bg); border-color: var(--badge-listen-border); color: var(--listen); }
+    .badge.outbound { background: var(--badge-out-bg); border-color: var(--badge-out-border); color: var(--warn); }
+    .badge.inbound { background: var(--accent-soft); border-color: var(--badge-in-border); color: var(--accent); }
 
     .empty {
       color: var(--muted);
@@ -304,7 +401,13 @@
         <h1>Connection Monitor</h1>
         <p>Watch matching Windows processes and every new TCP/UDP connection in real time.</p>
       </div>
-      <div class="live-pill"><span class="dot" id="liveDot"></span><span id="liveLabel">Idle</span></div>
+      <div class="header-actions">
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+          <span class="icon-sun">Dark</span>
+          <span class="icon-moon">Light</span>
+        </button>
+        <div class="live-pill"><span class="dot" id="liveDot"></span><span id="liveLabel">Idle</span></div>
+      </div>
     </header>
 
     <section class="panel controls">
@@ -355,6 +458,7 @@
       outboundOnly: document.getElementById("outboundOnly"),
       startBtn: document.getElementById("startBtn"),
       stopBtn: document.getElementById("stopBtn"),
+      themeToggle: document.getElementById("themeToggle"),
       liveDot: document.getElementById("liveDot"),
       liveLabel: document.getElementById("liveLabel"),
       statusMsg: document.getElementById("statusMsg"),
@@ -365,6 +469,18 @@
       remoteList: document.getElementById("remoteList"),
       feed: document.getElementById("feed"),
     };
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("cm-theme", theme);
+    }
+
+    els.themeToggle.addEventListener("click", () => {
+      const next = document.documentElement.getAttribute("data-theme") === "dark"
+        ? "light"
+        : "dark";
+      setTheme(next);
+    });
 
     function badgeClass(kind, value) {
       const v = String(value || "").toLowerCase();
