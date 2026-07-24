@@ -8,6 +8,10 @@
 
 from pathlib import Path
 
+# --- Branding ---------------------------------------------------------------
+TOOL_NAME = "Osidev Monitoring"
+TOOL_SIGNATURE = "Tool made by Osidev"
+
 # --- Target (can also be passed on the CLI) ---------------------------------
 DEFAULT_TARGET = ""  # e.g. "chrome" or full path; empty = prompt / CLI arg
 

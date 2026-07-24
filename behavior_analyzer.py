@@ -276,6 +276,7 @@ def main() -> None:
 
     _print("=" * 78, "cyan")
     _print("  BEHAVIOR ANALYZER", "cyan")
+    _print(f"  {cfg.TOOL_SIGNATURE}", "cyan")
     _print(f"  Target     : {target}")
     _print(f"  Admin      : {is_admin()}")
     _print(f"  Logs       : {cfg.LOG_DIR.resolve()}")

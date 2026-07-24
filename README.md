@@ -1,5 +1,7 @@
 # App Connection Monitor
 
+**Tool made by Osidev**
+
 Continuously monitors TCP and UDP connections made by a running application on Windows. Includes:
 
 - Simple CLI monitor

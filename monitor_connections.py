@@ -55,6 +55,7 @@ def monitor(target: str, outbound_only: bool) -> None:
     header = (
         f"{'=' * 80}\n"
         f"  App Connection Monitor\n"
+        f"  Tool made by Osidev\n"
         f"  Target : {target}\n"
         f"  Filter : {'outbound only' if outbound_only else 'all connections'}\n"
         f"  Log    : {LOG_FILE.resolve()}\n"

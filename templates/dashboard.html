@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Connection Monitor</title>
+  <title>Connection Monitor · Osidev</title>
   <script>
     (function () {
       const saved = localStorage.getItem("cm-theme");
@@ -386,6 +386,20 @@
 
     .side-stack { display: grid; gap: 1rem; }
 
+    .brand-footer {
+      margin-top: 1.75rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.88rem;
+      letter-spacing: 0.01em;
+    }
+
+    .brand-footer strong {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
     @media (max-width: 900px) {
       .controls { grid-template-columns: 1fr; }
       .stats, .grid { grid-template-columns: 1fr; }
@@ -400,6 +414,9 @@
       <div>
         <h1>Connection Monitor</h1>
         <p>Watch matching Windows processes and every new TCP/UDP connection in real time.</p>
+        <p class="brand-line" style="margin:0.45rem 0 0;color:var(--muted);font-size:0.9rem;">
+          <strong style="color:var(--accent);">Tool made by Osidev</strong>
+        </p>
       </div>
       <div class="header-actions">
         <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
@@ -450,6 +467,10 @@
         </div>
       </section>
     </div>
+
+    <footer class="brand-footer">
+      <strong>Tool made by Osidev</strong> · Osidev Monitoring
+    </footer>
   </div>
 
   <script>

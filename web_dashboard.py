@@ -184,7 +184,9 @@ def api_stream():
 
 
 def main() -> None:
-    print("Live dashboard: http://127.0.0.1:5050")
+    print("Osidev Monitoring — Live dashboard")
+    print("Tool made by Osidev")
+    print("Open: http://127.0.0.1:5050")
     print("Press Ctrl+C to stop.")
     try:
         app.run(host="127.0.0.1", port=5050, debug=False, threaded=True)

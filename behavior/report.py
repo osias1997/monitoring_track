@@ -23,6 +23,9 @@ def build_report(bus: EventBus, target: str) -> tuple[str, str]:
     md_lines = [
         f"# Behavior Analysis Report",
         "",
+        f"**{cfg.TOOL_SIGNATURE}**",
+        "",
+        f"- **Tool:** {cfg.TOOL_NAME}",
         f"- **Target:** `{target}`",
         f"- **Generated:** {generated}",
         f"- **Total events:** {len(events)}",
@@ -126,14 +129,18 @@ tr.interesting{{background:#2a2114}}
 .session{{border:1px solid #2a353e;padding:1rem;margin:1rem 0;background:#171e24}}
 .sev{{font-size:.75rem;padding:.1rem .4rem;border:1px solid #2a353e;margin-left:.4rem}}
 .sev-high .sev{{color:#f87171}} .sev-medium .sev{{color:#fbbf24}} .sev-low .sev{{color:#4ade80}}
+.brand{{margin-top:2rem;padding-top:1rem;border-top:1px solid #2a353e;color:#9aabb6;font-size:.9rem}}
+.brand strong{{color:#2dd4bf}}
 </style></head><body>
 <h1>Behavior Analysis Report</h1>
+<p class="meta"><strong>{html.escape(cfg.TOOL_SIGNATURE)}</strong> · {html.escape(cfg.TOOL_NAME)}</p>
 <p class="meta">Target: <strong>{html.escape(target)}</strong> · Generated: {html.escape(generated)} · Events: {len(events)}</p>
 <h2>Sessions</h2>
 {''.join(session_blocks) or '<p class="meta">No connection sessions recorded.</p>'}
 <h2>Timeline</h2>
 <table><thead><tr><th>Time</th><th>Category</th><th>Action</th><th>PID</th><th>Summary</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
+<p class="brand"><strong>Tool made by Osidev</strong></p>
 </body></html>
 """
 
