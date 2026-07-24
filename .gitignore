@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 app_connections.log
+behavior_logs/
 *.log
 .DS_Store
 Thumbs.db
