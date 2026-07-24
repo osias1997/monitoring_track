@@ -1,17 +1,30 @@
 # App Connection Monitor
 
-Continuously monitors TCP and UDP connections made by a running application and logs them to the console and `app_connections.log`.
+Continuously monitors TCP and UDP connections made by a running application.
 
 ## Setup
 
 ```bash
 pip install -r requirements.txt
-# or: pip install psutil colorama
+# or: pip install psutil colorama flask
 ```
 
 On Windows, run the terminal **as Administrator** if you need connections for protected processes (some apps hide sockets otherwise).
 
-## Usage
+## Live web dashboard
+
+```bash
+python web_dashboard.py
+```
+
+Open [http://127.0.0.1:5050](http://127.0.0.1:5050) in your browser.
+
+- Enter any app name or executable path (`chrome`, `discord`, `notepad.exe`, …)
+- Press **Start** to watch matching processes and new connections live
+- Optional: enable **Outbound only**
+- Press **Stop** or Ctrl+C in the terminal to end the session
+
+## CLI usage
 
 ```bash
 # Interactive prompt for the app name
@@ -30,7 +43,7 @@ Stop with **Ctrl+C**. A summary of unique remote endpoints is printed at the end
 
 ## Log fields
 
-Each new connection records:
+Both the CLI and web dashboard append events to `app_connections.log`:
 
 - Timestamp
 - Process name + PID

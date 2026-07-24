@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connection Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #eef2f4;
+      --bg-panel: #fbfcfd;
+      --ink: #152028;
+      --muted: #5b6b76;
+      --line: #d5dee4;
+      --accent: #0f766e;
+      --accent-soft: #d7f0ec;
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --ok: #15803d;
+      --listen: #0369a1;
+      --shadow: 0 10px 30px rgba(21, 32, 40, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "IBM Plex Sans", sans-serif;
+      background:
+        radial-gradient(circle at 0% 0%, #d9ebe8 0%, transparent 42%),
+        radial-gradient(circle at 100% 0%, #dfe7ef 0%, transparent 38%),
+        linear-gradient(180deg, #f5f8fa 0%, var(--bg) 100%);
+    }
+
+    .wrap {
+      width: min(1200px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 1.5rem 0 2.5rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 3vw, 2.1rem);
+      letter-spacing: -0.03em;
+    }
+
+    header p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+      max-width: 42rem;
+    }
+
+    .live-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.45rem 0.75rem;
+      border: 1px solid var(--line);
+      background: var(--bg-panel);
+      font-size: 0.85rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .dot.on {
+      background: var(--ok);
+      box-shadow: 0 0 0 4px rgba(21, 128, 61, 0.15);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: 0.75; }
+    }
+
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 1rem 1.1rem;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 0.75rem;
+      align-items: end;
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      padding: 0.7rem 0.8rem;
+      font: inherit;
+      font-size: 1rem;
+    }
+
+    input[type="text"]:focus {
+      outline: 2px solid color-mix(in srgb, var(--accent) 45%, white);
+      border-color: var(--accent);
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      height: 2.7rem;
+      padding: 0 0.2rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      user-select: none;
+    }
+
+    button {
+      border: 0;
+      height: 2.7rem;
+      padding: 0 1.1rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-start {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-stop {
+      background: #fff;
+      color: var(--danger);
+      border: 1px solid #f1c5c5;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .stat {
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 0.25rem;
+      font-size: 1.45rem;
+      font-family: "IBM Plex Mono", monospace;
+      letter-spacing: -0.02em;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 1rem;
+    }
+
+    .section-title {
+      margin: 0 0 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .status-msg {
+      margin: 0 0 0.9rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .proc-list, .remote-list, .feed {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .proc-list li, .remote-list li {
+      padding: 0.65rem 0;
+      border-bottom: 1px solid var(--line);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+    }
+
+    .proc-list li:last-child, .remote-list li:last-child { border-bottom: 0; }
+
+    .proc-name { font-weight: 600; color: var(--ink); }
+    .proc-meta { color: var(--muted); margin-top: 0.2rem; }
+
+    .feed-wrap { max-height: 62vh; overflow: auto; }
+
+    .feed li {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 0.75rem;
+      padding: 0.8rem 0;
+      border-bottom: 1px solid var(--line);
+      animation: fadeIn 280ms ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .feed time {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .feed .body {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.35rem 0; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.12rem 0.4rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      border: 1px solid var(--line);
+      background: #f3f6f8;
+    }
+
+    .badge.tcp { background: #e8f1ff; border-color: #c9dbf5; color: #1d4ed8; }
+    .badge.udp { background: #fff0e8; border-color: #f0d0b8; color: #c2410c; }
+    .badge.established { background: #e9f8ee; border-color: #bfe8cb; color: var(--ok); }
+    .badge.listen { background: #e7f4fb; border-color: #b9daf0; color: var(--listen); }
+    .badge.outbound { background: #fff4e7; border-color: #f0d2a8; color: var(--warn); }
+    .badge.inbound { background: var(--accent-soft); border-color: #b6ddd6; color: var(--accent); }
+
+    .empty {
+      color: var(--muted);
+      font-size: 0.92rem;
+      padding: 0.5rem 0;
+    }
+
+    .side-stack { display: grid; gap: 1rem; }
+
+    @media (max-width: 900px) {
+      .controls { grid-template-columns: 1fr; }
+      .stats, .grid { grid-template-columns: 1fr; }
+      .feed li { grid-template-columns: 1fr; gap: 0.25rem; }
+      header { flex-direction: column; align-items: start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Connection Monitor</h1>
+        <p>Watch matching Windows processes and every new TCP/UDP connection in real time.</p>
+      </div>
+      <div class="live-pill"><span class="dot" id="liveDot"></span><span id="liveLabel">Idle</span></div>
+    </header>
+
+    <section class="panel controls">
+      <div>
+        <label for="app">Application name or path</label>
+        <input id="app" type="text" placeholder="e.g. chrome, discord, notepad.exe" autocomplete="off" />
+      </div>
+      <label class="check">
+        <input id="outboundOnly" type="checkbox" />
+        Outbound only
+      </label>
+      <button class="btn-start" id="startBtn" type="button">Start</button>
+      <button class="btn-stop" id="stopBtn" type="button" disabled>Stop</button>
+    </section>
+
+    <section class="stats">
+      <div class="stat"><span>Processes</span><strong id="statProcs">0</strong></div>
+      <div class="stat"><span>Connections seen</span><strong id="statConns">0</strong></div>
+      <div class="stat"><span>Unique remotes</span><strong id="statRemotes">0</strong></div>
+    </section>
+
+    <p class="status-msg" id="statusMsg">Idle — enter an app name and press Start.</p>
+
+    <div class="grid">
+      <aside class="side-stack">
+        <section class="panel">
+          <h2 class="section-title">Matching processes</h2>
+          <ul class="proc-list" id="procList"><li class="empty">No processes yet.</li></ul>
+        </section>
+        <section class="panel">
+          <h2 class="section-title">Unique remotes</h2>
+          <ul class="remote-list" id="remoteList"><li class="empty">None yet.</li></ul>
+        </section>
+      </aside>
+
+      <section class="panel">
+        <h2 class="section-title">Live connection feed</h2>
+        <div class="feed-wrap">
+          <ul class="feed" id="feed"><li class="empty">Waiting for connections…</li></ul>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const els = {
+      app: document.getElementById("app"),
+      outboundOnly: document.getElementById("outboundOnly"),
+      startBtn: document.getElementById("startBtn"),
+      stopBtn: document.getElementById("stopBtn"),
+      liveDot: document.getElementById("liveDot"),
+      liveLabel: document.getElementById("liveLabel"),
+      statusMsg: document.getElementById("statusMsg"),
+      statProcs: document.getElementById("statProcs"),
+      statConns: document.getElementById("statConns"),
+      statRemotes: document.getElementById("statRemotes"),
+      procList: document.getElementById("procList"),
+      remoteList: document.getElementById("remoteList"),
+      feed: document.getElementById("feed"),
+    };
+
+    function badgeClass(kind, value) {
+      const v = String(value || "").toLowerCase();
+      if (kind === "protocol") return v;
+      if (kind === "status") return v === "established" || v === "listen" ? v : "";
+      if (kind === "direction") return v;
+      return "";
+    }
+
+    function render(data) {
+      const running = !!data.running;
+      els.liveDot.classList.toggle("on", running);
+      els.liveLabel.textContent = running ? "Live" : "Idle";
+      els.startBtn.disabled = running;
+      els.stopBtn.disabled = !running;
+      els.app.disabled = running;
+      els.outboundOnly.disabled = running;
+      if (data.target && els.app.value !== data.target) els.app.value = data.target;
+      els.outboundOnly.checked = !!data.outbound_only;
+      els.statusMsg.textContent = data.message || "";
+      els.statProcs.textContent = (data.processes || []).length;
+      els.statConns.textContent = data.total_connections || 0;
+      els.statRemotes.textContent = data.unique_remotes || 0;
+
+      const procs = data.processes || [];
+      els.procList.innerHTML = procs.length
+        ? procs.map(p => `
+            <li>
+              <div class="proc-name">${escapeHtml(p.name)}</div>
+              <div class="proc-meta">PID ${p.pid} · ${p.connections} conn · ${escapeHtml(p.status)}</div>
+            </li>`).join("")
+        : `<li class="empty">No matching processes running.</li>`;
+
+      const remotes = data.remotes || [];
+      els.remoteList.innerHTML = remotes.length
+        ? remotes.slice(0, 80).map(r => `<li>${escapeHtml(r)}</li>`).join("")
+        : `<li class="empty">None yet.</li>`;
+
+      const events = data.events || [];
+      els.feed.innerHTML = events.length
+        ? events.map(e => `
+            <li>
+              <time>${escapeHtml(e.timestamp)}</time>
+              <div class="body">
+                <div><strong>${escapeHtml(e.process)}</strong> · PID ${e.pid}</div>
+                <div class="badges">
+                  <span class="badge ${badgeClass("protocol", e.protocol)}">${escapeHtml(e.protocol)}</span>
+                  <span class="badge ${badgeClass("status", e.status)}">${escapeHtml(e.status)}</span>
+                  <span class="badge ${badgeClass("direction", e.direction)}">${escapeHtml(e.direction)}</span>
+                </div>
+                <div>${escapeHtml(e.local)} → ${escapeHtml(e.remote)}</div>
+              </div>
+            </li>`).join("")
+        : `<li class="empty">Waiting for connections…</li>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    async function startMonitor() {
+      const appName = els.app.value.trim();
+      if (!appName) {
+        els.app.focus();
+        els.statusMsg.textContent = "Enter an application name or executable path first.";
+        return;
+      }
+      const res = await fetch("/api/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          app: appName,
+          outbound_only: els.outboundOnly.checked,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        els.statusMsg.textContent = data.error || "Failed to start.";
+        return;
+      }
+      render(data);
+    }
+
+    async function stopMonitor() {
+      const res = await fetch("/api/stop", { method: "POST" });
+      const data = await res.json();
+      render(data);
+    }
+
+    els.startBtn.addEventListener("click", startMonitor);
+    els.stopBtn.addEventListener("click", stopMonitor);
+    els.app.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") startMonitor();
+    });
+
+    // Live updates via Server-Sent Events (falls back to polling if needed)
+    let source;
+    function connectStream() {
+      if (source) source.close();
+      source = new EventSource("/api/stream");
+      source.onmessage = (ev) => {
+        try { render(JSON.parse(ev.data)); } catch (_) {}
+      };
+      source.onerror = () => {
+        source.close();
+        setTimeout(connectStream, 1500);
+      };
+    }
+    connectStream();
+  </script>
+</body>
+</html>
