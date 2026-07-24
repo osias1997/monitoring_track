@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Connection Monitor · Osidev</title>
+  <title>Connection Monitor Â· Osidev</title>
   <script>
     (function () {
       const saved = localStorage.getItem("cm-theme");
@@ -192,10 +192,21 @@
 
     .controls {
       display: grid;
-      grid-template-columns: 1fr auto auto auto;
+      grid-template-columns: 1.4fr 0.7fr auto auto auto;
       gap: 0.75rem;
       align-items: end;
       margin-bottom: 1rem;
+    }
+
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--bg-input);
+      color: var(--ink);
+      padding: 0.7rem 0.8rem;
+      font: inherit;
+      font-size: 1rem;
+      height: 2.7rem;
     }
 
     label {
@@ -265,7 +276,7 @@
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 0.75rem;
       margin-bottom: 1rem;
     }
@@ -455,22 +466,68 @@
       font-weight: 600;
     }
 
-    @media (max-width: 900px) {
+    .feature-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin: 0 0 0.9rem;
+    }
+
+    .feature-pills span {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.45rem;
+      border: 1px solid var(--line);
+      background: var(--bg-badge);
+      color: var(--muted);
+    }
+
+    .feature-pills span.on {
+      color: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+      background: var(--accent-soft);
+    }
+
+    .admin-warn {
+      color: var(--danger);
+      font-size: 0.85rem;
+      margin: 0 0 0.75rem;
+      display: none;
+    }
+
+    .admin-warn.show { display: block; }
+
+    .feed li.interesting {
+      background: color-mix(in srgb, var(--warn) 8%, transparent);
+    }
+
+    .grid-deep {
+      display: grid;
+      grid-template-columns: 280px 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 1100px) {
+      .grid-deep { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
       .controls { grid-template-columns: 1fr; }
-      .stats, .grid { grid-template-columns: 1fr; }
       .feed li { grid-template-columns: 1fr; gap: 0.25rem; }
       header { flex-direction: column; align-items: start; }
     }
+
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div>
-        <h1>Connection Monitor</h1>
-        <p>Watch matching Windows processes and every new TCP/UDP connection in real time.</p>
+        <h1>Deep Behavior Monitor</h1>
+        <p>Full reverse-engineering stack in the browser: process, packets, ETW, Frida, DLL signatures, memory, and correlated sessions.</p>
         <p class="brand-line" style="margin:0.45rem 0 0;color:var(--muted);font-size:0.9rem;">
           <strong style="color:var(--accent);">Tool made by Osidev</strong>
+          <span id="versionTag"></span>
         </p>
       </div>
       <div class="header-actions">
@@ -487,6 +544,16 @@
         <label for="app">Application name or path</label>
         <input id="app" type="text" placeholder="e.g. chrome, discord, notepad.exe" autocomplete="off" />
       </div>
+      <div>
+        <label for="mode">Analysis mode</label>
+        <select id="mode">
+          <option value="full">Full</option>
+          <option value="deep">Deep (ETW+Frida+memory)</option>
+          <option value="packets">Packets</option>
+          <option value="connections">Connections</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
       <label class="check">
         <input id="outboundOnly" type="checkbox" />
         Outbound only
@@ -495,31 +562,41 @@
       <button class="btn-stop" id="stopBtn" type="button" disabled>Stop</button>
     </section>
 
+    <p class="admin-warn" id="adminWarn">Not running as Administrator â€” ETW / packets / memory / Frida may be limited.</p>
+    <div class="feature-pills" id="featurePills"></div>
+
     <section class="stats">
       <div class="stat"><span>Processes</span><strong id="statProcs">0</strong></div>
-      <div class="stat"><span>Connections seen</span><strong id="statConns">0</strong></div>
-      <div class="stat"><span>Unique remotes</span><strong id="statRemotes">0</strong></div>
+      <div class="stat"><span>Connections</span><strong id="statConns">0</strong></div>
+      <div class="stat"><span>Packets</span><strong id="statPackets">0</strong></div>
+      <div class="stat"><span>Interesting</span><strong id="statInteresting">0</strong></div>
+      <div class="stat"><span>Sessions</span><strong id="statSessions">0</strong></div>
     </section>
 
-    <p class="status-msg" id="statusMsg">Idle — enter an app name and press Start.</p>
+    <p class="status-msg" id="statusMsg">Idle â€” choose a mode, enter an app name, press Start.</p>
 
     <section class="panel save-bar" aria-label="Save and export">
-      <button class="btn-save" id="saveBtn" type="button" title="Save JSON, Markdown, CSV and TXT to web_exports/">
-        Save to disk
-      </button>
-      <button class="btn-dl" id="dlJson" type="button">Download JSON</button>
-      <button class="btn-dl" id="dlMd" type="button">Download MD</button>
-      <button class="btn-dl" id="dlCsv" type="button">Download CSV</button>
-      <button class="btn-dl" id="dlTxt" type="button">Download TXT</button>
-      <button class="btn-dl" id="dlLog" type="button">Download log</button>
-      <p class="save-note" id="saveNote">Save current session to <code>web_exports/</code>, or download files in the browser.</p>
+      <button class="btn-save" id="saveBtn" type="button">Save to disk</button>
+      <button class="btn-save" id="reportBtn" type="button" title="Generate Plotly HTML + Markdown report">Generate report</button>
+      <button class="btn-dl" id="openReport" type="button">Open report</button>
+      <button class="btn-dl" id="dlJson" type="button">JSON</button>
+      <button class="btn-dl" id="dlMd" type="button">MD</button>
+      <button class="btn-dl" id="dlCsv" type="button">CSV</button>
+      <button class="btn-dl" id="dlTxt" type="button">TXT</button>
+      <button class="btn-dl" id="dlLog" type="button">Log</button>
+      <button class="btn-dl" id="dlPcap" type="button">PCAP</button>
+      <p class="save-note" id="saveNote">Deep exports go to <code>web_exports/</code> and <code>behavior_logs/</code>.</p>
     </section>
 
-    <div class="grid">
+    <div class="grid-deep">
       <aside class="side-stack">
         <section class="panel">
           <h2 class="section-title">Matching processes</h2>
           <ul class="proc-list" id="procList"><li class="empty">No processes yet.</li></ul>
+        </section>
+        <section class="panel">
+          <h2 class="section-title">Behavior sessions</h2>
+          <ul class="remote-list" id="sessionList"><li class="empty">No sessions yet.</li></ul>
         </section>
         <section class="panel">
           <h2 class="section-title">Unique remotes</h2>
@@ -532,21 +609,29 @@
       </aside>
 
       <section class="panel">
-        <h2 class="section-title">Live connection feed</h2>
+        <h2 class="section-title">Behavior event stream</h2>
         <div class="feed-wrap">
-          <ul class="feed" id="feed"><li class="empty">Waiting for connections…</li></ul>
+          <ul class="feed" id="behaviorFeed"><li class="empty">Waiting for deep eventsâ€¦</li></ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="section-title">Network connections</h2>
+        <div class="feed-wrap">
+          <ul class="feed" id="feed"><li class="empty">Waiting for connectionsâ€¦</li></ul>
         </div>
       </section>
     </div>
 
     <footer class="brand-footer">
-      <strong>Tool made by Osidev</strong> · Osidev Monitoring
+      <strong>Tool made by Osidev</strong> Â· Osidev Monitoring
     </footer>
   </div>
 
   <script>
     const els = {
       app: document.getElementById("app"),
+      mode: document.getElementById("mode"),
       outboundOnly: document.getElementById("outboundOnly"),
       startBtn: document.getElementById("startBtn"),
       stopBtn: document.getElementById("stopBtn"),
@@ -554,13 +639,22 @@
       liveDot: document.getElementById("liveDot"),
       liveLabel: document.getElementById("liveLabel"),
       statusMsg: document.getElementById("statusMsg"),
+      adminWarn: document.getElementById("adminWarn"),
+      featurePills: document.getElementById("featurePills"),
+      versionTag: document.getElementById("versionTag"),
       statProcs: document.getElementById("statProcs"),
       statConns: document.getElementById("statConns"),
-      statRemotes: document.getElementById("statRemotes"),
+      statPackets: document.getElementById("statPackets"),
+      statInteresting: document.getElementById("statInteresting"),
+      statSessions: document.getElementById("statSessions"),
       procList: document.getElementById("procList"),
       remoteList: document.getElementById("remoteList"),
+      sessionList: document.getElementById("sessionList"),
       feed: document.getElementById("feed"),
+      behaviorFeed: document.getElementById("behaviorFeed"),
       saveBtn: document.getElementById("saveBtn"),
+      reportBtn: document.getElementById("reportBtn"),
+      openReport: document.getElementById("openReport"),
       saveNote: document.getElementById("saveNote"),
       exportList: document.getElementById("exportList"),
       dlJson: document.getElementById("dlJson"),
@@ -568,6 +662,7 @@
       dlCsv: document.getElementById("dlCsv"),
       dlTxt: document.getElementById("dlTxt"),
       dlLog: document.getElementById("dlLog"),
+      dlPcap: document.getElementById("dlPcap"),
     };
 
     function setTheme(theme) {
@@ -576,9 +671,7 @@
     }
 
     els.themeToggle.addEventListener("click", () => {
-      const next = document.documentElement.getAttribute("data-theme") === "dark"
-        ? "light"
-        : "dark";
+      const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
       setTheme(next);
     });
 
@@ -590,6 +683,14 @@
       return "";
     }
 
+    function renderFeatures(runtime) {
+      const keys = ["process", "files", "registry", "dns", "packets", "memory", "etw", "frida", "dll_sig"];
+      els.featurePills.innerHTML = keys.map(k => {
+        const on = !!(runtime && runtime[k]);
+        return `<span class="${on ? "on" : ""}">${k}${on ? "" : ""}</span>`;
+      }).join("");
+    }
+
     function render(data) {
       const running = !!data.running;
       els.liveDot.classList.toggle("on", running);
@@ -597,48 +698,80 @@
       els.startBtn.disabled = running;
       els.stopBtn.disabled = !running;
       els.app.disabled = running;
+      els.mode.disabled = running;
       els.outboundOnly.disabled = running;
       if (data.target && els.app.value !== data.target) els.app.value = data.target;
+      if (data.mode) els.mode.value = data.mode;
       els.outboundOnly.checked = !!data.outbound_only;
       els.statusMsg.textContent = data.message || "";
+      els.adminWarn.classList.toggle("show", data.admin === false);
+      if (data.version) els.versionTag.textContent = ` Â· v${data.version}`;
+      renderFeatures(data.runtime || {});
+
       els.statProcs.textContent = (data.processes || []).length;
       els.statConns.textContent = data.total_connections || 0;
-      els.statRemotes.textContent = data.unique_remotes || 0;
+      els.statPackets.textContent = data.packet_count || 0;
+      els.statInteresting.textContent = data.interesting_count || 0;
+      els.statSessions.textContent = (data.sessions || []).length;
 
       const procs = data.processes || [];
       els.procList.innerHTML = procs.length
         ? procs.map(p => `
             <li>
               <div class="proc-name">${escapeHtml(p.name)}</div>
-              <div class="proc-meta">PID ${p.pid} · ${p.connections} conn · ${escapeHtml(p.status)}</div>
+              <div class="proc-meta">PID ${p.pid} Â· ${p.connections} conn Â· ${escapeHtml(p.status)}</div>
             </li>`).join("")
         : `<li class="empty">No matching processes running.</li>`;
+
+      const sessions = data.sessions || [];
+      els.sessionList.innerHTML = sessions.length
+        ? sessions.slice(0, 30).map(s => `
+            <li>
+              <div class="proc-name">${escapeHtml(s.severity)} Â· ${escapeHtml(s.session_id)}</div>
+              <div class="proc-meta">${escapeHtml(s.summary || "")}</div>
+            </li>`).join("")
+        : `<li class="empty">No sessions yet.</li>`;
 
       const remotes = data.remotes || [];
       els.remoteList.innerHTML = remotes.length
         ? remotes.slice(0, 80).map(r => `<li>${escapeHtml(r)}</li>`).join("")
         : `<li class="empty">None yet.</li>`;
 
-      const events = data.events || [];
+      const behavior = data.behavior_events || [];
+      els.behaviorFeed.innerHTML = behavior.length
+        ? behavior.slice(0, 120).map(e => `
+            <li class="${e.interesting ? "interesting" : ""}">
+              <time>${escapeHtml(e.timestamp)}</time>
+              <div class="body">
+                <div><strong>${escapeHtml(e.category)}/${escapeHtml(e.action)}</strong>
+                  ${e.pid ? ` Â· PID ${e.pid}` : ""}</div>
+                <div>${escapeHtml(e.summary)}</div>
+              </div>
+            </li>`).join("")
+        : `<li class="empty">Waiting for deep eventsâ€¦</li>`;
+
+      const events = data.connections || data.events || [];
       els.feed.innerHTML = events.length
         ? events.map(e => `
             <li>
               <time>${escapeHtml(e.timestamp)}</time>
               <div class="body">
-                <div><strong>${escapeHtml(e.process)}</strong> · PID ${e.pid}</div>
+                <div><strong>${escapeHtml(e.process)}</strong> Â· PID ${e.pid}</div>
                 <div class="badges">
-                  <span class="badge ${badgeClass("protocol", e.protocol)}">${escapeHtml(e.protocol)}</span>
-                  <span class="badge ${badgeClass("status", e.status)}">${escapeHtml(e.status)}</span>
-                  <span class="badge ${badgeClass("direction", e.direction)}">${escapeHtml(e.direction)}</span>
+                  <span class="badge ${badgeClass("protocol", e.protocol)}">${escapeHtml(e.protocol || "")}</span>
+                  <span class="badge ${badgeClass("status", e.status)}">${escapeHtml(e.status || "")}</span>
+                  <span class="badge ${badgeClass("direction", e.direction)}">${escapeHtml(e.direction || "")}</span>
                 </div>
-                <div>${escapeHtml(e.local)} → ${escapeHtml(e.remote)}</div>
+                <div>${escapeHtml(e.local)} â†’ ${escapeHtml(e.remote)}</div>
               </div>
             </li>`).join("")
-        : `<li class="empty">Waiting for connections…</li>`;
+        : `<li class="empty">Waiting for connectionsâ€¦</li>`;
 
-      if (data.last_saved && data.last_saved.saved_at) {
+      if (data.last_report && data.last_report.saved_at) {
+        els.saveNote.textContent = `Report ready ${data.last_report.saved_at} Â· ${data.last_report.html || ""}`;
+      } else if (data.last_saved && data.last_saved.saved_at) {
         const n = (data.last_saved.files || []).length;
-        els.saveNote.textContent = `Last saved ${data.last_saved.saved_at} · ${n} file(s) in web_exports/`;
+        els.saveNote.textContent = `Last saved ${data.last_saved.saved_at} Â· ${n} file(s)`;
       }
     }
 
@@ -650,7 +783,7 @@
         els.exportList.innerHTML = files.length
           ? files.slice(0, 20).map(f => `
               <li>
-                <span>${escapeHtml(f.name)} · ${escapeHtml(f.modified)}</span>
+                <span>${escapeHtml(f.name)} Â· ${escapeHtml(f.modified)}</span>
                 <a href="/api/exports/${encodeURIComponent(f.name)}">Download</a>
               </li>`).join("")
           : `<li class="empty">No saved files yet.</li>`;
@@ -670,29 +803,40 @@
         const data = await res.json();
         if (!res.ok) {
           els.saveNote.textContent = data.error || "Save failed.";
-          els.statusMsg.textContent = data.error || "Save failed.";
           return;
         }
         render(data);
         els.saveNote.textContent = `Saved ${data.files.length} file(s) to ${data.export_dir}`;
         await refreshExports();
-      } catch (err) {
-        els.saveNote.textContent = "Save failed — is the dashboard still running?";
+      } catch (_) {
+        els.saveNote.textContent = "Save failed â€” is the dashboard still running?";
       } finally {
         els.saveBtn.disabled = false;
+      }
+    }
+
+    async function generateReport() {
+      els.reportBtn.disabled = true;
+      els.saveNote.textContent = "Generating professional reportâ€¦";
+      try {
+        const res = await fetch("/api/report", { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) {
+          els.saveNote.textContent = data.error || "Report failed.";
+          return;
+        }
+        render(data);
+        els.saveNote.textContent = `Report saved: ${data.html}`;
+      } catch (_) {
+        els.saveNote.textContent = "Report failed.";
+      } finally {
+        els.reportBtn.disabled = false;
       }
     }
 
     function downloadFormat(fmt) {
       window.location.href = `/api/export/${fmt}`;
     }
-
-    els.saveBtn.addEventListener("click", saveToDisk);
-    els.dlJson.addEventListener("click", () => downloadFormat("json"));
-    els.dlMd.addEventListener("click", () => downloadFormat("md"));
-    els.dlCsv.addEventListener("click", () => downloadFormat("csv"));
-    els.dlTxt.addEventListener("click", () => downloadFormat("txt"));
-    els.dlLog.addEventListener("click", () => { window.location.href = "/api/download/log"; });
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -715,6 +859,7 @@
         body: JSON.stringify({
           app: appName,
           outbound_only: els.outboundOnly.checked,
+          mode: els.mode.value,
         }),
       });
       const data = await res.json();
@@ -731,6 +876,15 @@
       render(data);
     }
 
+    els.saveBtn.addEventListener("click", saveToDisk);
+    els.reportBtn.addEventListener("click", generateReport);
+    els.openReport.addEventListener("click", () => { window.open("/api/report/html", "_blank"); });
+    els.dlJson.addEventListener("click", () => downloadFormat("json"));
+    els.dlMd.addEventListener("click", () => downloadFormat("md"));
+    els.dlCsv.addEventListener("click", () => downloadFormat("csv"));
+    els.dlTxt.addEventListener("click", () => downloadFormat("txt"));
+    els.dlLog.addEventListener("click", () => { window.location.href = "/api/download/log"; });
+    els.dlPcap.addEventListener("click", () => { window.location.href = "/api/report/download/pcap"; });
     els.startBtn.addEventListener("click", startMonitor);
     els.stopBtn.addEventListener("click", stopMonitor);
     els.app.addEventListener("keydown", (e) => {
@@ -739,7 +893,6 @@
 
     refreshExports();
 
-    // Live updates via Server-Sent Events (falls back to polling if needed)
     let source;
     function connectStream() {
       if (source) source.close();

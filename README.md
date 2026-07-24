@@ -99,7 +99,7 @@ Stop with **Ctrl+C** → professional report is generated automatically.
 
 ---
 
-## Live web dashboard
+## Live web dashboard (deep mode)
 
 ```bash
 python web_dashboard.py
@@ -107,10 +107,15 @@ python web_dashboard.py
 
 Open http://127.0.0.1:5050
 
-- Live process + connection feed
-- Dark mode
-- **Save to disk** / download JSON·MD·CSV·TXT / download log → `web_exports/`
+The web UI now runs the **same Behavior Analyzer v2 stack**:
 
+- Mode selector: `full` / `deep` / `packets` / `connections` / `light`
+- Live behavior event stream (ETW, Frida, DLL, memory, packets, …)
+- Correlated sessions + network feed
+- **Generate report** → Plotly HTML + Markdown in `behavior_logs/`
+- Save/export JSON·MD·CSV·TXT + PCAP/log downloads
+
+Use an **Administrator** terminal for best results. Restart the dashboard after updating code, then hard-refresh the browser.
 ---
 
 ## Simple CLI
