@@ -1,17 +1,43 @@
 # App Connection Monitor
 
-Continuously monitors TCP and UDP connections made by a running application.
+Continuously monitors TCP and UDP connections made by a running application on Windows. Includes a CLI and a live web dashboard.
 
-## Setup
+You can install and run this on **any Windows PC** that has Python.
+
+---
+
+## Requirements
+
+- Windows PC
+- [Python 3.10+](https://www.python.org/downloads/) installed  
+  During install, check **“Add python.exe to PATH”**
+- Optional but useful: run **Command Prompt / PowerShell as Administrator** (some apps hide network sockets without it)
+
+---
+
+## Install on any PC
+
+### 1. Get the app
+
+**Option A — from GitHub**
+
+```bash
+git clone https://github.com/osias1997/monitoring_track.git
+cd monitoring_track
+```
+
+**Option B — copy the folder**
+
+Copy this project folder to the other PC, then open that folder in a terminal.
+
+### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 # or: pip install psutil colorama flask
 ```
 
-On Windows, run the terminal **as Administrator** if you need connections for protected processes (some apps hide sockets otherwise).
-
-## Live web dashboard
+### 3. Run the live web monitor
 
 ```bash
 python web_dashboard.py
@@ -19,12 +45,16 @@ python web_dashboard.py
 
 Open [http://127.0.0.1:5050](http://127.0.0.1:5050) in your browser.
 
-- Enter any app name or executable path (`chrome`, `discord`, `notepad.exe`, …)
-- Press **Start** to watch matching processes and new connections live
-- Optional: enable **Outbound only**
-- Press **Stop** or Ctrl+C in the terminal to end the session
+1. Enter an app name (`chrome`, `discord`, `notepad.exe`, …)
+2. Click **Start**
+3. Watch matching processes and new connections live
+4. Click **Stop** when done (or press Ctrl+C in the terminal)
 
-## CLI usage
+Optional: enable **Outbound only** to filter the feed.
+
+Use the **Dark / Light** button to switch theme (preference is saved in the browser).
+
+### 4. Or use the terminal (CLI) version
 
 ```bash
 # Interactive prompt for the app name
@@ -41,9 +71,21 @@ python monitor_connections.py chrome --outbound-only
 
 Stop with **Ctrl+C**. A summary of unique remote endpoints is printed at the end.
 
+---
+
+## Notes
+
+- The app you want to monitor must be **running** on that PC.
+- Works for any process name or executable path — not only Chrome.
+- The dashboard is local-only (`127.0.0.1`) — it monitors that PC, not remote PCs over the network.
+- If connections look empty, restart the terminal **as Administrator** and try again.
+- Events from both the CLI and web dashboard are written to `app_connections.log`.
+
+---
+
 ## Log fields
 
-Both the CLI and web dashboard append events to `app_connections.log`:
+Each new connection records:
 
 - Timestamp
 - Process name + PID
