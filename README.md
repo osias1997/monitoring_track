@@ -143,6 +143,15 @@ Open [http://127.0.0.1:5050](http://127.0.0.1:5050)
 
 Optional: **Outbound only**. Use **Dark / Light** to switch theme.
 
+### Save / export from the web UI
+
+- **Save to disk** — writes JSON, Markdown, CSV, and TXT into `web_exports/`
+- **Download JSON / MD / CSV / TXT** — browser download of the current session
+- **Download log** — downloads `app_connections.log`
+- **Saved exports** panel — re-download earlier saves
+
+Restart the dashboard after updating, then refresh the page.
+
 ---
 
 ## Simple CLI monitor

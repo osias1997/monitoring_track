@@ -400,6 +400,61 @@
       font-weight: 700;
     }
 
+    .save-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .btn-save, .btn-dl {
+      height: 2.4rem;
+      padding: 0 0.9rem;
+      border: 1px solid var(--line);
+      background: var(--bg-panel);
+      color: var(--ink);
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .btn-save {
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .save-note {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin: 0;
+      flex: 1 1 220px;
+    }
+
+    .export-list {
+      list-style: none;
+      margin: 0.5rem 0 0;
+      padding: 0;
+      max-height: 160px;
+      overflow: auto;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+    }
+
+    .export-list li {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .export-list a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
     @media (max-width: 900px) {
       .controls { grid-template-columns: 1fr; }
       .stats, .grid { grid-template-columns: 1fr; }
@@ -448,6 +503,18 @@
 
     <p class="status-msg" id="statusMsg">Idle — enter an app name and press Start.</p>
 
+    <section class="panel save-bar" aria-label="Save and export">
+      <button class="btn-save" id="saveBtn" type="button" title="Save JSON, Markdown, CSV and TXT to web_exports/">
+        Save to disk
+      </button>
+      <button class="btn-dl" id="dlJson" type="button">Download JSON</button>
+      <button class="btn-dl" id="dlMd" type="button">Download MD</button>
+      <button class="btn-dl" id="dlCsv" type="button">Download CSV</button>
+      <button class="btn-dl" id="dlTxt" type="button">Download TXT</button>
+      <button class="btn-dl" id="dlLog" type="button">Download log</button>
+      <p class="save-note" id="saveNote">Save current session to <code>web_exports/</code>, or download files in the browser.</p>
+    </section>
+
     <div class="grid">
       <aside class="side-stack">
         <section class="panel">
@@ -457,6 +524,10 @@
         <section class="panel">
           <h2 class="section-title">Unique remotes</h2>
           <ul class="remote-list" id="remoteList"><li class="empty">None yet.</li></ul>
+        </section>
+        <section class="panel">
+          <h2 class="section-title">Saved exports</h2>
+          <ul class="export-list" id="exportList"><li class="empty">No saved files yet.</li></ul>
         </section>
       </aside>
 
@@ -489,6 +560,14 @@
       procList: document.getElementById("procList"),
       remoteList: document.getElementById("remoteList"),
       feed: document.getElementById("feed"),
+      saveBtn: document.getElementById("saveBtn"),
+      saveNote: document.getElementById("saveNote"),
+      exportList: document.getElementById("exportList"),
+      dlJson: document.getElementById("dlJson"),
+      dlMd: document.getElementById("dlMd"),
+      dlCsv: document.getElementById("dlCsv"),
+      dlTxt: document.getElementById("dlTxt"),
+      dlLog: document.getElementById("dlLog"),
     };
 
     function setTheme(theme) {
@@ -556,7 +635,64 @@
               </div>
             </li>`).join("")
         : `<li class="empty">Waiting for connections…</li>`;
+
+      if (data.last_saved && data.last_saved.saved_at) {
+        const n = (data.last_saved.files || []).length;
+        els.saveNote.textContent = `Last saved ${data.last_saved.saved_at} · ${n} file(s) in web_exports/`;
+      }
     }
+
+    async function refreshExports() {
+      try {
+        const res = await fetch("/api/exports");
+        const data = await res.json();
+        const files = data.files || [];
+        els.exportList.innerHTML = files.length
+          ? files.slice(0, 20).map(f => `
+              <li>
+                <span>${escapeHtml(f.name)} · ${escapeHtml(f.modified)}</span>
+                <a href="/api/exports/${encodeURIComponent(f.name)}">Download</a>
+              </li>`).join("")
+          : `<li class="empty">No saved files yet.</li>`;
+      } catch (_) {
+        els.exportList.innerHTML = `<li class="empty">Could not load exports.</li>`;
+      }
+    }
+
+    async function saveToDisk() {
+      els.saveBtn.disabled = true;
+      try {
+        const res = await fetch("/api/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ formats: ["json", "md", "csv", "txt"] }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          els.saveNote.textContent = data.error || "Save failed.";
+          els.statusMsg.textContent = data.error || "Save failed.";
+          return;
+        }
+        render(data);
+        els.saveNote.textContent = `Saved ${data.files.length} file(s) to ${data.export_dir}`;
+        await refreshExports();
+      } catch (err) {
+        els.saveNote.textContent = "Save failed — is the dashboard still running?";
+      } finally {
+        els.saveBtn.disabled = false;
+      }
+    }
+
+    function downloadFormat(fmt) {
+      window.location.href = `/api/export/${fmt}`;
+    }
+
+    els.saveBtn.addEventListener("click", saveToDisk);
+    els.dlJson.addEventListener("click", () => downloadFormat("json"));
+    els.dlMd.addEventListener("click", () => downloadFormat("md"));
+    els.dlCsv.addEventListener("click", () => downloadFormat("csv"));
+    els.dlTxt.addEventListener("click", () => downloadFormat("txt"));
+    els.dlLog.addEventListener("click", () => { window.location.href = "/api/download/log"; });
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -600,6 +736,8 @@
     els.app.addEventListener("keydown", (e) => {
       if (e.key === "Enter") startMonitor();
     });
+
+    refreshExports();
 
     // Live updates via Server-Sent Events (falls back to polling if needed)
     let source;
