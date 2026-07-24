@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -562,7 +562,7 @@
       <button class="btn-stop" id="stopBtn" type="button" disabled>Stop</button>
     </section>
 
-    <p class="admin-warn" id="adminWarn">Not running as Administrator â€” ETW / packets / memory / Frida may be limited.</p>
+    <p class="admin-warn" id="adminWarn">Not running as Administrator - ETW / packets / memory / Frida may be limited.</p>
     <div class="feature-pills" id="featurePills"></div>
 
     <section class="stats">
@@ -573,7 +573,7 @@
       <div class="stat"><span>Sessions</span><strong id="statSessions">0</strong></div>
     </section>
 
-    <p class="status-msg" id="statusMsg">Idle â€” choose a mode, enter an app name, press Start.</p>
+    <p class="status-msg" id="statusMsg">Idle - choose a mode, enter an app name, press Start.</p>
 
     <section class="panel save-bar" aria-label="Save and export">
       <button class="btn-save" id="saveBtn" type="button">Save to disk</button>
@@ -611,20 +611,20 @@
       <section class="panel">
         <h2 class="section-title">Behavior event stream</h2>
         <div class="feed-wrap">
-          <ul class="feed" id="behaviorFeed"><li class="empty">Waiting for deep eventsâ€¦</li></ul>
+          <ul class="feed" id="behaviorFeed"><li class="empty">Waiting for deep events...</li></ul>
         </div>
       </section>
 
       <section class="panel">
         <h2 class="section-title">Network connections</h2>
         <div class="feed-wrap">
-          <ul class="feed" id="feed"><li class="empty">Waiting for connectionsâ€¦</li></ul>
+          <ul class="feed" id="feed"><li class="empty">Waiting for connections...</li></ul>
         </div>
       </section>
     </div>
 
     <footer class="brand-footer">
-      <strong>Tool made by Osidev</strong> Â· Osidev Monitoring
+      <strong>Tool made by Osidev</strong> - Osidev Monitoring
     </footer>
   </div>
 
@@ -705,7 +705,7 @@
       els.outboundOnly.checked = !!data.outbound_only;
       els.statusMsg.textContent = data.message || "";
       els.adminWarn.classList.toggle("show", data.admin === false);
-      if (data.version) els.versionTag.textContent = ` Â· v${data.version}`;
+      if (data.version) els.versionTag.textContent = ` - v${data.version}`;
       renderFeatures(data.runtime || {});
 
       els.statProcs.textContent = (data.processes || []).length;
@@ -719,7 +719,7 @@
         ? procs.map(p => `
             <li>
               <div class="proc-name">${escapeHtml(p.name)}</div>
-              <div class="proc-meta">PID ${p.pid} Â· ${p.connections} conn Â· ${escapeHtml(p.status)}</div>
+              <div class="proc-meta">PID ${p.pid} - ${p.connections} conn - ${escapeHtml(p.status)}</div>
             </li>`).join("")
         : `<li class="empty">No matching processes running.</li>`;
 
@@ -727,7 +727,7 @@
       els.sessionList.innerHTML = sessions.length
         ? sessions.slice(0, 30).map(s => `
             <li>
-              <div class="proc-name">${escapeHtml(s.severity)} Â· ${escapeHtml(s.session_id)}</div>
+              <div class="proc-name">${escapeHtml(s.severity)} - ${escapeHtml(s.session_id)}</div>
               <div class="proc-meta">${escapeHtml(s.summary || "")}</div>
             </li>`).join("")
         : `<li class="empty">No sessions yet.</li>`;
@@ -744,11 +744,11 @@
               <time>${escapeHtml(e.timestamp)}</time>
               <div class="body">
                 <div><strong>${escapeHtml(e.category)}/${escapeHtml(e.action)}</strong>
-                  ${e.pid ? ` Â· PID ${e.pid}` : ""}</div>
+                  ${e.pid ? ` - PID ${e.pid}` : ""}</div>
                 <div>${escapeHtml(e.summary)}</div>
               </div>
             </li>`).join("")
-        : `<li class="empty">Waiting for deep eventsâ€¦</li>`;
+        : `<li class="empty">Waiting for deep events...</li>`;
 
       const events = data.connections || data.events || [];
       els.feed.innerHTML = events.length
@@ -756,22 +756,22 @@
             <li>
               <time>${escapeHtml(e.timestamp)}</time>
               <div class="body">
-                <div><strong>${escapeHtml(e.process)}</strong> Â· PID ${e.pid}</div>
+                <div><strong>${escapeHtml(e.process)}</strong> - PID ${e.pid}</div>
                 <div class="badges">
                   <span class="badge ${badgeClass("protocol", e.protocol)}">${escapeHtml(e.protocol || "")}</span>
                   <span class="badge ${badgeClass("status", e.status)}">${escapeHtml(e.status || "")}</span>
                   <span class="badge ${badgeClass("direction", e.direction)}">${escapeHtml(e.direction || "")}</span>
                 </div>
-                <div>${escapeHtml(e.local)} â†’ ${escapeHtml(e.remote)}</div>
+                <div>${escapeHtml(e.local)} -> ${escapeHtml(e.remote)}</div>
               </div>
             </li>`).join("")
-        : `<li class="empty">Waiting for connectionsâ€¦</li>`;
+        : `<li class="empty">Waiting for connections...</li>`;
 
       if (data.last_report && data.last_report.saved_at) {
-        els.saveNote.textContent = `Report ready ${data.last_report.saved_at} Â· ${data.last_report.html || ""}`;
+        els.saveNote.textContent = `Report ready ${data.last_report.saved_at} - ${data.last_report.html || ""}`;
       } else if (data.last_saved && data.last_saved.saved_at) {
         const n = (data.last_saved.files || []).length;
-        els.saveNote.textContent = `Last saved ${data.last_saved.saved_at} Â· ${n} file(s)`;
+        els.saveNote.textContent = `Last saved ${data.last_saved.saved_at} - ${n} file(s)`;
       }
     }
 
@@ -783,7 +783,7 @@
         els.exportList.innerHTML = files.length
           ? files.slice(0, 20).map(f => `
               <li>
-                <span>${escapeHtml(f.name)} Â· ${escapeHtml(f.modified)}</span>
+                <span>${escapeHtml(f.name)} - ${escapeHtml(f.modified)}</span>
                 <a href="/api/exports/${encodeURIComponent(f.name)}">Download</a>
               </li>`).join("")
           : `<li class="empty">No saved files yet.</li>`;
@@ -809,7 +809,7 @@
         els.saveNote.textContent = `Saved ${data.files.length} file(s) to ${data.export_dir}`;
         await refreshExports();
       } catch (_) {
-        els.saveNote.textContent = "Save failed â€” is the dashboard still running?";
+        els.saveNote.textContent = "Save failed - is the dashboard still running?";
       } finally {
         els.saveBtn.disabled = false;
       }
@@ -817,7 +817,7 @@
 
     async function generateReport() {
       els.reportBtn.disabled = true;
-      els.saveNote.textContent = "Generating professional reportâ€¦";
+      els.saveNote.textContent = "Generating professional report...";
       try {
         const res = await fetch("/api/report", { method: "POST" });
         const data = await res.json();

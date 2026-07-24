@@ -44,6 +44,20 @@ MAX_CONN_EVENTS = 400
 MAX_BEHAVIOR_EVENTS = 600
 
 app = Flask(__name__)
+app.config["JSON_AS_ASCII"] = False
+
+
+@app.after_request
+def _force_utf8(resp):
+    """Ensure browsers decode HTML/JS/JSON as UTF-8 (avoids mojibake)."""
+    ctype = resp.headers.get("Content-Type", "")
+    if ctype.startswith("text/html") and "charset" not in ctype:
+        resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    elif ctype.startswith("application/json") and "charset" not in ctype:
+        resp.headers["Content-Type"] = "application/json; charset=utf-8"
+    elif ctype.startswith("text/event-stream") and "charset" not in ctype:
+        resp.headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    return resp
 
 _lock = threading.Lock()
 _state = {
@@ -60,7 +74,7 @@ _state = {
     "total_connections": 0,
     "packet_count": 0,
     "interesting_count": 0,
-    "message": "Idle — choose a mode, enter an app name, press Start.",
+    "message": "Idle - choose a mode, enter an app name, press Start.",
     "last_saved": None,
     "last_report": None,
     "admin": is_admin(),
@@ -146,11 +160,11 @@ def _sync_from_analyzer(analyzer: BehaviorAnalyzer) -> None:
         _state["admin"] = is_admin()
 
         if not processes:
-            _state["message"] = f"Waiting for process matching '{analyzer.target}'…"
+            _state["message"] = f"Waiting for process matching '{analyzer.target}'..."
         else:
             _state["message"] = (
-                f"Deep monitoring {len(processes)} process(es) · mode={_state['mode']} · "
-                f"events={len(bus_events)} · packets={_state['packet_count']}"
+                f"Deep monitoring {len(processes)} process(es) | mode={_state['mode']} | "
+                f"events={len(bus_events)} | packets={_state['packet_count']}"
             )
 
         for ev in new_behavior:
@@ -265,7 +279,7 @@ def _build_markdown(data: dict) -> str:
     lines = [
         "# Osidev Deep Monitor Export",
         "",
-        f"**{cfg.TOOL_SIGNATURE}** · v{data.get('version')}",
+        f"**{cfg.TOOL_SIGNATURE}** | v{data.get('version')}",
         "",
         f"- **Target:** `{data.get('target') or 'n/a'}`",
         f"- **Mode:** {data.get('mode')}",
@@ -287,7 +301,7 @@ def _build_markdown(data: dict) -> str:
     ]
     for s in data.get("sessions") or []:
         lines.append(
-            f"- `{s.get('session_id')}` **{s.get('severity')}** — {s.get('summary')} "
+            f"- `{s.get('session_id')}` **{s.get('severity')}** - {s.get('summary')} "
             f"({s.get('event_count')} events)"
         )
     lines += ["", "## Behavior events", ""]
@@ -301,7 +315,7 @@ def _build_markdown(data: dict) -> str:
     for e in data.get("connections") or data.get("events") or []:
         lines.append(
             f"- `{e.get('timestamp')}` {e.get('process')} ({e.get('pid')}) "
-            f"{e.get('local')} → {e.get('remote')}"
+            f"{e.get('local')} -> {e.get('remote')}"
         )
     lines += ["", "---", cfg.TOOL_SIGNATURE, ""]
     return "\n".join(lines)
@@ -413,7 +427,7 @@ def api_start():
         _state["interesting_count"] = 0
         _state["last_report"] = None
         _state["admin"] = is_admin()
-        _state["message"] = f"Starting {mode} monitor for '{target}'…"
+        _state["message"] = f"Starting {mode} monitor for '{target}'..."
 
     _append_log(
         f"\n{'=' * 80}\n  Web deep monitor started\n"
@@ -476,7 +490,7 @@ def api_report():
 def api_report_html():
     path = cfg.REPORT_HTML
     if not path.exists():
-        return jsonify({"ok": False, "error": "No report yet — click Generate report first."}), 404
+        return jsonify({"ok": False, "error": "No report yet - click Generate report first."}), 404
     return send_file(path.resolve(), as_attachment=False, download_name=path.name)
 
 
@@ -541,7 +555,7 @@ def api_save():
         formats = [formats]
     snap = _snapshot()
     if not snap.get("behavior_events") and not snap.get("connections") and not snap.get("total_connections"):
-        return jsonify({"ok": False, "error": "Nothing to save yet — start monitoring first."}), 400
+        return jsonify({"ok": False, "error": "Nothing to save yet - start monitoring first."}), 400
 
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = _stamp()
