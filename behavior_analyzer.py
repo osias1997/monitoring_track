@@ -2,19 +2,28 @@
 """
 Behavior Analyzer — reverse-engineering / behavioral analysis for Windows apps.
 
-Tracks what happens before, during, and after network connections:
-  process modules, children, resources, files, registry, DNS, optional memory.
+Includes deep packet capture (Scapy) scoped to the target process endpoints.
 
 Install:
-  pip install psutil watchdog colorama rich
-  # optional: pip install scapy frida frida-tools
+  pip install psutil watchdog colorama rich scapy
+  # Npcap (required for sniffing): https://npcap.com/
+  # optional: pip install frida frida-tools
 
-Run (Administrator recommended):
-  python behavior_analyzer.py chrome
-  python behavior_analyzer.py --outbound-only discord
-  python behavior_analyzer.py  # prompts for target
+Run as Administrator for best results:
+  python behavior_analyzer.py
+  python behavior_analyzer.py chrome --mode full
+  python behavior_analyzer.py chrome --mode packets
+  python behavior_analyzer.py chrome --packets
+  python behavior_analyzer.py --mode light notepad
 
-Config toggles live in behavior_config.py
+Modes:
+  full         — process + files + registry + DNS + packets
+  connections  — connection/process focus (no packet capture)
+  packets      — packet capture + connection correlation
+  light        — connections only (minimal side channels)
+
+Config toggles: behavior_config.py
+Tool made by Osidev
 """
 
 from __future__ import annotations
@@ -23,6 +32,7 @@ import argparse
 import sys
 import time
 import uuid
+from datetime import datetime
 
 import behavior_config as cfg
 from behavior.admin import ensure_admin_warning, is_admin
@@ -32,51 +42,101 @@ from behavior.highlights import annotate_connection
 from behavior.memory_strings import maybe_memory_snapshot
 from behavior.network_deep import DnsTracker, OptionalPacketSniffer, connection_details
 from behavior.optional_hooks import try_etw_note, try_start_frida
+from behavior.packet_capture import ProcessPacketCapture
 from behavior.process_inspect import ProcessTracker
 from behavior.registry_watch import RegistryWatcher
 from behavior.report import write_reports
 from monitor_core import connection_key, find_matching_pids, shutdown_dns_pool
 
 
-def _console():
-    if cfg.ENABLE_RICH_CONSOLE:
-        try:
-            from rich.console import Console
-            from rich.table import Table
-            return Console(), Table
-        except ImportError:
-            pass
-    return None, None
+MODES = {
+    "full": {
+        "process": True, "files": True, "registry": True, "dns": True,
+        "packets": True, "memory": None,  # None = follow config
+    },
+    "connections": {
+        "process": True, "files": False, "registry": False, "dns": True,
+        "packets": False, "memory": False,
+    },
+    "packets": {
+        "process": True, "files": False, "registry": False, "dns": True,
+        "packets": True, "memory": False,
+    },
+    "light": {
+        "process": False, "files": False, "registry": False, "dns": False,
+        "packets": False, "memory": False,
+    },
+}
 
 
 def _print(msg: str, style: str | None = None) -> None:
-    console, _ = _console()
-    if console is not None:
-        console.print(msg, style=style)
-    else:
+    if cfg.ENABLE_RICH_CONSOLE:
         try:
-            from colorama import Fore, Style, init
-            if cfg.ENABLE_COLORAMA:
-                init(autoreset=True)
-                colors = {
-                    "green": Fore.GREEN,
-                    "yellow": Fore.YELLOW,
-                    "cyan": Fore.CYAN,
-                    "red": Fore.RED,
-                    "magenta": Fore.MAGENTA,
-                }
-                prefix = colors.get(style or "", "")
-                print(prefix + msg + (Style.RESET_ALL if prefix else ""))
-                return
+            from rich.console import Console
+            Console().print(msg, style=style)
+            return
         except ImportError:
             pass
-        print(msg)
+    try:
+        from colorama import Fore, Style, init
+        if cfg.ENABLE_COLORAMA:
+            init(autoreset=True)
+            colors = {
+                "green": Fore.GREEN, "yellow": Fore.YELLOW, "cyan": Fore.CYAN,
+                "red": Fore.RED, "magenta": Fore.MAGENTA, "bold": Fore.WHITE,
+            }
+            prefix = colors.get(style or "", "")
+            print(prefix + msg + (Style.RESET_ALL if prefix else ""))
+            return
+    except ImportError:
+        pass
+    print(msg)
+
+
+def apply_mode(mode: str) -> dict:
+    """Overlay mode presets onto runtime feature flags (does not rewrite config file)."""
+    preset = MODES.get(mode, MODES["full"])
+    runtime = {
+        "process": preset["process"] and cfg.ENABLE_PROCESS_INSPECTION,
+        "files": preset["files"] and cfg.ENABLE_FILE_ACTIVITY,
+        "registry": preset["registry"] and cfg.ENABLE_REGISTRY_WATCH,
+        "dns": preset["dns"] and cfg.ENABLE_DNS_TRACKING,
+        "packets": preset["packets"] and cfg.ENABLE_PACKET_CAPTURE,
+        "memory": cfg.ENABLE_MEMORY_STRINGS if preset["memory"] is None else preset["memory"],
+        "frida": cfg.ENABLE_FRIDA_HOOKS,
+        "legacy_scapy": cfg.ENABLE_SCAPY_SNIFF and not (preset["packets"] and cfg.ENABLE_PACKET_CAPTURE),
+    }
+    return runtime
+
+
+def interactive_menu() -> tuple[str, str, bool]:
+    """Simple main menu when launched without a target/mode."""
+    print()
+    print("=" * 60)
+    print("  Osidev Monitoring — Behavior Analyzer")
+    print("  Tool made by Osidev")
+    print("=" * 60)
+    print("  1) Full analysis (process + files + registry + packets)")
+    print("  2) Connections only")
+    print("  3) Packet-focused (capture + connection correlation)")
+    print("  4) Light (connections, minimal extras)")
+    print("  5) Quit")
+    print("=" * 60)
+    choice = input("Select mode [1]: ").strip() or "1"
+    mode_map = {"1": "full", "2": "connections", "3": "packets", "4": "light"}
+    if choice == "5":
+        sys.exit(0)
+    mode = mode_map.get(choice, "full")
+    target = input("Application name or executable path: ").strip()
+    outbound = input("Outbound connections only? [y/N]: ").strip().lower() in {"y", "yes"}
+    return target, mode, outbound
 
 
 class BehaviorAnalyzer:
-    def __init__(self, target: str, outbound_only: bool) -> None:
+    def __init__(self, target: str, outbound_only: bool, runtime: dict) -> None:
         self.target = target
         self.outbound_only = outbound_only
+        self.rt = runtime
         self.bus = EventBus()
         self.seen_conns: set[tuple] = set()
         self.process_tracker = ProcessTracker(self.bus)
@@ -84,37 +144,54 @@ class BehaviorAnalyzer:
         self.dir_watcher = DirectoryWatcher(self.bus)
         self.registry = RegistryWatcher(self.bus)
         self.dns = DnsTracker(self.bus)
-        self.sniffer = OptionalPacketSniffer(self.bus)
+        self.legacy_sniffer = OptionalPacketSniffer(self.bus)
+        self.packets = ProcessPacketCapture(self.bus, on_packet=self._on_packet_console)
         self._frida_attached: set[int] = set()
         self._baseline_ready = False
+        self._start_epoch = time.time()
+
+    def _on_packet_console(self, record: dict) -> None:
+        hl = record.get("highlights") or []
+        if not hl and not cfg.PACKET_EMIT_ALL_EVENTS:
+            return
+        style = "red" if hl else "green"
+        _print(f"[PKT] {record.get('summary')}", style)
 
     def start_side_channels(self) -> None:
-        if cfg.ENABLE_FILE_ACTIVITY:
+        if self.rt["files"]:
             ok = self.dir_watcher.start()
+            _print(f"[+] Directory watcher: {'on' if ok else 'off'}", "cyan" if ok else "yellow")
+        if self.rt["packets"]:
+            if not is_admin():
+                _print(
+                    "[!] Packet capture needs Administrator + Npcap (https://npcap.com/)",
+                    "red",
+                )
+            ok = self.packets.start()
             _print(
-                f"[+] Directory watcher: {'on' if ok else 'off'}",
-                "cyan" if ok else "yellow",
+                f"[+] Packet capture: {'on' if ok else 'FAILED'}",
+                "cyan" if ok else "red",
             )
-        if cfg.ENABLE_SCAPY_SNIFF:
-            self.sniffer.start()
+            if ok:
+                _print(f"    log : {cfg.PACKET_LOG_FILE.resolve()}", "cyan")
+                _print(f"    pcap: {cfg.PACKET_PCAP_FILE.resolve()}", "cyan")
+        elif self.rt["legacy_scapy"]:
+            self.legacy_sniffer.start()
         try_etw_note(self.bus)
 
     def stop(self) -> None:
         self.dir_watcher.stop()
-        self.sniffer.stop()
+        self.legacy_sniffer.stop()
+        self.packets.stop()
 
     def _session_id(self, rec: dict) -> str:
         remote = rec.get("remote") or "local"
         return f"{rec.get('pid')}-{remote}-{uuid.uuid4().hex[:8]}"
 
     def on_new_connection(self, rec: dict, proc_snap: dict | None) -> None:
-        """Deep dive when a new connection appears."""
         epoch = now_epoch()
         sid = self._session_id(rec)
         flags = annotate_connection(rec) if cfg.ENABLE_HIGHLIGHTS else []
-        interesting = bool(flags)
-
-        # Sequence: events shortly before this connection
         before = self.bus.recent_before(epoch, seconds=3.0) if cfg.ENABLE_SEQUENCE_ANALYSIS else []
 
         details = dict(rec)
@@ -127,10 +204,20 @@ class BehaviorAnalyzer:
         details["cpu_percent"] = (proc_snap or {}).get("cpu_percent")
         details["memory_rss"] = (proc_snap or {}).get("memory_rss")
         details["num_threads"] = (proc_snap or {}).get("num_threads")
-        details["fs_near_event"] = self.dir_watcher.recent_around(epoch)
+        details["fs_near_event"] = self.dir_watcher.recent_around(epoch) if self.rt["files"] else []
         details["pre_events"] = [
             {"action": e.action, "summary": e.summary, "timestamp": e.timestamp}
             for e in before
+        ]
+        # Correlate recent interesting packets with this connection
+        remote_ip = rec.get("remote_ip")
+        related_pkts = [
+            p for p in self.packets.highlights[-30:]
+            if remote_ip and (p.get("dst_ip") == remote_ip or p.get("src_ip") == remote_ip)
+        ]
+        details["related_packets"] = [
+            {"timestamp": p.get("timestamp"), "summary": p.get("summary"), "highlights": p.get("highlights")}
+            for p in related_pkts
         ]
 
         self.bus.emit(BehaviorEvent(
@@ -143,11 +230,10 @@ class BehaviorAnalyzer:
             pid=rec.get("pid"),
             process=rec.get("process"),
             details=details,
-            interesting=interesting,
+            interesting=bool(flags) or bool(related_pkts),
             session_id=sid,
         ))
 
-        # Attach pre-events to this session for the report sequence
         for e in before:
             self.bus.emit(BehaviorEvent(
                 category=e.category,
@@ -160,7 +246,7 @@ class BehaviorAnalyzer:
                 session_id=sid,
             ))
 
-        style = "red" if interesting else "green"
+        style = "red" if flags or related_pkts else "green"
         _print(
             f"[{rec.get('timestamp', '')}] CONN  "
             f"{rec.get('process')}({rec.get('pid')})  "
@@ -170,9 +256,10 @@ class BehaviorAnalyzer:
             style,
         )
 
-        maybe_memory_snapshot(
-            self.bus, int(rec["pid"]), str(rec.get("process") or ""), sid
-        )
+        if self.rt["memory"]:
+            maybe_memory_snapshot(
+                self.bus, int(rec["pid"]), str(rec.get("process") or ""), sid
+            )
 
     def poll_once(self) -> None:
         matches = find_matching_pids(self.target)
@@ -180,30 +267,30 @@ class BehaviorAnalyzer:
             _print(f"[…] Waiting for process matching '{self.target}'…", "yellow")
             return
 
-        # Process / file / registry / dns side polls
+        pids = set(matches.keys())
+        if self.rt["packets"]:
+            self.packets.update_process_endpoints(pids)
+
         snaps: dict[int, dict] = {}
         for pid, name in matches.items():
-            if cfg.ENABLE_PROCESS_INSPECTION:
+            if self.rt["process"]:
                 snaps[pid] = self.process_tracker.poll(pid, name)
-                # Warm cpu_percent
                 try:
                     import psutil
                     psutil.Process(pid).cpu_percent(interval=0.0)
                 except Exception:
                     pass
-            if cfg.ENABLE_FILE_ACTIVITY:
+            if self.rt["files"]:
                 self.open_files.poll(pid, name)
-            if cfg.ENABLE_FRIDA_HOOKS and pid not in self._frida_attached:
+            if self.rt["frida"] and pid not in self._frida_attached:
                 if try_start_frida(self.bus, pid):
                     self._frida_attached.add(pid)
 
-        if cfg.ENABLE_REGISTRY_WATCH:
+        if self.rt["registry"]:
             self.registry.poll()
-        if cfg.ENABLE_DNS_TRACKING:
+        if self.rt["dns"]:
             self.dns.poll()
 
-        # Connections via shared scanner (also records new ones)
-        # Use local seen set + connection_details for richer records
         import psutil
         from monitor_core import infer_direction
 
@@ -221,13 +308,9 @@ class BehaviorAnalyzer:
                 if key in self.seen_conns:
                     continue
                 self.seen_conns.add(key)
-
-                # Skip flood of pre-existing sockets on first observation
                 if not self._baseline_ready:
                     continue
-
                 rec = connection_details(name, pid, conn)
-                from datetime import datetime
                 rec["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                 self.on_new_connection(rec, snaps.get(pid))
 
@@ -248,15 +331,25 @@ class BehaviorAnalyzer:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Behavioral analysis / reverse-engineering monitor for Windows apps."
+        description="Osidev behavioral analysis / packet monitor for Windows apps."
     )
     p.add_argument("app", nargs="?", default=cfg.DEFAULT_TARGET or None,
                    help="Process name or executable path")
+    p.add_argument(
+        "--mode",
+        choices=sorted(MODES.keys()),
+        default=None,
+        help="Monitoring mode: full | connections | packets | light",
+    )
     p.add_argument("-o", "--outbound-only", action="store_true",
                    default=cfg.OUTBOUND_ONLY,
                    help="Only analyze outbound connections")
-    p.add_argument("--report", action="store_true",
-                   help="Write reports now from existing events.jsonl context (after run)")
+    p.add_argument("--packets", action="store_true",
+                   help="Force-enable packet capture for this run")
+    p.add_argument("--no-packets", action="store_true",
+                   help="Force-disable packet capture for this run")
+    p.add_argument("--menu", action="store_true",
+                   help="Show interactive mode menu")
     p.add_argument("--no-elevate-prompt", action="store_true",
                    help="Do not ask to relaunch as Administrator")
     return p.parse_args()
@@ -264,13 +357,40 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+
+    if args.menu or (not args.app and args.mode is None and sys.stdin.isatty()):
+        # Interactive path when no app given, or --menu
+        if args.menu or not args.app:
+            target, mode, outbound = interactive_menu()
+            if not target:
+                print("No target specified.", file=sys.stderr)
+                sys.exit(1)
+            args.app = target
+            args.mode = mode
+            args.outbound_only = outbound
+
     if cfg.WARN_IF_NOT_ADMIN:
         ensure_admin_warning(offer_elevation=cfg.OFFER_ELEVATION and not args.no_elevate_prompt)
 
-    target = (args.app or "").strip() or input("Application name or executable path: ").strip()
+    target = (args.app or "").strip()
+    if not target:
+        target = input("Application name or executable path: ").strip()
     if not target:
         print("No target specified.", file=sys.stderr)
         sys.exit(1)
+
+    mode = args.mode or "full"
+    runtime = apply_mode(mode)
+    if args.packets:
+        runtime["packets"] = True
+    if args.no_packets:
+        runtime["packets"] = False
+
+    # Temporary override config flag used by packet module
+    if runtime["packets"]:
+        cfg.ENABLE_PACKET_CAPTURE = True
+    else:
+        cfg.ENABLE_PACKET_CAPTURE = False
 
     cfg.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -278,26 +398,39 @@ def main() -> None:
     _print("  BEHAVIOR ANALYZER", "cyan")
     _print(f"  {cfg.TOOL_SIGNATURE}", "cyan")
     _print(f"  Target     : {target}")
+    _print(f"  Mode       : {mode}")
     _print(f"  Admin      : {is_admin()}")
     _print(f"  Logs       : {cfg.LOG_DIR.resolve()}")
-    _print(f"  Features   : proc={cfg.ENABLE_PROCESS_INSPECTION} "
-           f"files={cfg.ENABLE_FILE_ACTIVITY} reg={cfg.ENABLE_REGISTRY_WATCH} "
-           f"dns={cfg.ENABLE_DNS_TRACKING} mem={cfg.ENABLE_MEMORY_STRINGS} "
-           f"scapy={cfg.ENABLE_SCAPY_SNIFF} frida={cfg.ENABLE_FRIDA_HOOKS}")
+    _print(
+        "  Features   : "
+        f"proc={runtime['process']} files={runtime['files']} "
+        f"reg={runtime['registry']} dns={runtime['dns']} "
+        f"packets={runtime['packets']} mem={runtime['memory']}",
+        "cyan",
+    )
+    if runtime["packets"]:
+        _print("  Npcap      : required — https://npcap.com/", "yellow")
     _print("  Stop       : Ctrl+C  (auto-report on exit)", "cyan")
     _print("=" * 78, "cyan")
 
-    analyzer = BehaviorAnalyzer(target, outbound_only=args.outbound_only)
+    analyzer = BehaviorAnalyzer(target, outbound_only=args.outbound_only, runtime=runtime)
     analyzer.start_side_channels()
     analyzer.bus.emit(BehaviorEvent(
         category="system",
         action="monitor_start",
-        summary=f"Started behavior monitor for '{target}'",
-        details={"admin": is_admin()},
+        summary=f"Started behavior monitor for '{target}' (mode={mode})",
+        details={"admin": is_admin(), "mode": mode, "runtime": runtime},
     ))
 
     try:
         while True:
+            if cfg.PACKET_SNIFF_TIMEOUT and runtime["packets"]:
+                if time.time() - analyzer._start_epoch >= cfg.PACKET_SNIFF_TIMEOUT:
+                    _print(
+                        f"[!] PACKET_SNIFF_TIMEOUT ({cfg.PACKET_SNIFF_TIMEOUT}s) reached — stopping",
+                        "yellow",
+                    )
+                    break
             analyzer.poll_once()
             time.sleep(cfg.POLL_INTERVAL_SEC)
     except KeyboardInterrupt:
@@ -308,6 +441,10 @@ def main() -> None:
             md, html_path = write_reports(analyzer.bus, target)
             _print(f"[+] Markdown report: {md}", "green")
             _print(f"[+] HTML report    : {html_path}", "green")
+            if runtime["packets"]:
+                _print(f"[+] Packet log     : {cfg.PACKET_LOG_FILE.resolve()}", "green")
+                _print(f"[+] PCAP file      : {cfg.PACKET_PCAP_FILE.resolve()}", "green")
+                _print(f"[+] Packets kept   : {analyzer.packets.packet_count}", "green")
         shutdown_dns_pool()
 
 

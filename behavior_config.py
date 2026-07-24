@@ -30,13 +30,26 @@ ENABLE_HIGHLIGHTS = True           # Flag interesting / suspicious patterns
 ENABLE_RICH_CONSOLE = True         # Pretty console (falls back if rich missing)
 ENABLE_COLORAMA = True
 
-# Optional deep hooks (require extra packages / drivers — safe no-ops if off)
-ENABLE_SCAPY_SNIFF = False         # Needs: pip install scapy + Npcap
+# --- Deep packet capture (Scapy + Npcap) ------------------------------------
+# REQUIRES: Npcap from https://npcap.com/  +  pip install scapy  +  Admin rights
+ENABLE_PACKET_CAPTURE = True
+PACKET_SNIFF_TIMEOUT = 0           # 0 = run until Ctrl+C; else stop sniff after N seconds
+PACKET_PAYLOAD_PREVIEW_BYTES = 160 # Hex/ASCII preview length per packet
+PACKET_EXFIL_PAYLOAD_BYTES = 4096  # Outbound payload size treated as possible exfil
+PACKET_MATCH_PORT_ONLY = True      # Also match by local port if IP form differs
+PACKET_EMIT_ALL_EVENTS = False     # If False, only interesting packets go to EventBus
+PACKET_INTERFACE = None            # e.g. "Ethernet"; None = Scapy default
+PACKET_BPF_FILTER = ""             # Optional BPF pre-filter, e.g. "tcp or udp"
+PACKET_LOG_FILE = Path("behavior_logs") / "packets.log"
+PACKET_PCAP_FILE = Path("behavior_logs") / "capture.pcap"
+PACKET_SUSPICIOUS_PORTS = {4444, 5555, 6666, 1234, 31337, 1337, 8081, 9001}
+
+# Legacy alias used by older helpers (prefer ENABLE_PACKET_CAPTURE)
+ENABLE_SCAPY_SNIFF = False         # Lightweight DNS/443-only sniffer (legacy)
 ENABLE_FRIDA_HOOKS = False         # Needs: pip install frida frida-tools
 ENABLE_ETW_TRACE = False           # Experimental PowerShell/ETW helper (best-effort)
 
 # --- File monitoring --------------------------------------------------------
-# Directories watched for create/modify near connection time (watchdog)
 WATCH_DIRS = [
     str(Path.home() / "AppData" / "Local"),
     str(Path.home() / "AppData" / "Roaming"),
@@ -44,7 +57,6 @@ WATCH_DIRS = [
     r"C:\Windows\Temp",
     str(Path.home() / "AppData" / "Local" / "Temp"),
 ]
-# Interesting file suffixes to emphasize in reports
 INTERESTING_FILE_SUFFIXES = {
     ".json", ".xml", ".ini", ".cfg", ".conf", ".config", ".db", ".sqlite",
     ".sqlite3", ".dat", ".cookie", ".cookies", ".pem", ".crt", ".cer", ".pfx",
@@ -61,14 +73,13 @@ REGISTRY_KEYS = [
 ]
 
 # --- Memory strings (only if ENABLE_MEMORY_STRINGS) -------------------------
-MEMORY_MAX_REGIONS = 40            # Cap regions scanned per snapshot
+MEMORY_MAX_REGIONS = 40
 MEMORY_MAX_BYTES_PER_REGION = 512 * 1024
 MEMORY_STRING_MIN_LEN = 8
 
 # --- Network / analysis -----------------------------------------------------
 OUTBOUND_ONLY = False
 INTERESTING_PORTS = {21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 465, 587, 993, 995, 3306, 3389, 8080, 8443}
-# Remotes commonly used for C2 / tunnels (heuristic — not definitive)
 SUSPICIOUS_REMOTE_HINTS = {
     "ngrok", "localtunnel", "serveo", "cloudflared", "trycloudflare",
     "duckdns", "no-ip", "dynu", "pastebin", "raw.githubusercontent",
@@ -84,4 +95,4 @@ KEEP_LAST_N_EVENTS_IN_MEMORY = 5000
 
 # --- Admin ------------------------------------------------------------------
 WARN_IF_NOT_ADMIN = True
-OFFER_ELEVATION = True             # Prompt to relaunch elevated on Windows
+OFFER_ELEVATION = True

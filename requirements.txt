@@ -3,7 +3,12 @@ colorama>=0.4.6
 flask>=3.0.0
 watchdog>=4.0.0
 rich>=13.0.0
+scapy>=2.5.0
 # Optional deep hooks (enable in behavior_config.py):
-# scapy>=2.5.0
 # frida>=16.0.0
 # frida-tools>=12.0.0
+
+# PACKET CAPTURE ALSO REQUIRES Npcap on Windows:
+#   https://npcap.com/
+#   Enable "WinPcap API-compatible Mode" during install.
+#   Run the analyzer as Administrator.

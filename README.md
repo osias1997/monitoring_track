@@ -40,26 +40,55 @@ Copy this project folder to the other PC, then open that folder in a terminal.
 
 ```bash
 pip install -r requirements.txt
-# core: pip install psutil colorama flask watchdog rich
+# core: pip install psutil colorama flask watchdog rich scapy
 ```
+
+For packet capture also install **Npcap**: https://npcap.com/
 
 ---
 
 ## Behavior Analyzer (recommended for deep analysis)
 
-Tracks what happens **before, during, and after** network connections: DLLs, cmdline/env, children, CPU/RAM spikes, file opens, registry changes, DNS, optional memory strings, and sequenced session reports.
+Tracks what happens **before, during, and after** network connections: DLLs, cmdline/env, children, CPU/RAM spikes, file opens, registry changes, DNS, **deep packet capture**, optional memory strings, and sequenced session reports.
 
 ### Configure features
 
-Edit toggles in [`behavior_config.py`](behavior_config.py) (process inspection, files, registry, DNS, memory dump, Scapy, Frida, etc.).
+Edit toggles in [`behavior_config.py`](behavior_config.py):
 
-### Run
+```python
+ENABLE_PACKET_CAPTURE = True
+PACKET_SNIFF_TIMEOUT = 0            # 0 = until Ctrl+C
+PACKET_PAYLOAD_PREVIEW_BYTES = 160
+PACKET_EXFIL_PAYLOAD_BYTES = 4096
+```
+
+### Packet capture setup (Npcap)
+
+1. Install **Npcap**: https://npcap.com/  
+   Enable **WinPcap API-compatible Mode** during setup.
+2. `pip install scapy`
+3. Run the analyzer **as Administrator**
+
+Without Npcap/Admin, process monitoring still works; packet capture will report a clear error.
+
+### Run modes
 
 ```bash
-# Administrator PowerShell / CMD recommended
-python behavior_analyzer.py chrome
+# Interactive menu
+python behavior_analyzer.py --menu
+
+# Full analysis (default) — process + files + registry + packets
+python behavior_analyzer.py chrome --mode full
+
+# Packet-focused
+python behavior_analyzer.py chrome --mode packets
+python behavior_analyzer.py chrome --packets
+
+# Connections only / light
+python behavior_analyzer.py chrome --mode connections
+python behavior_analyzer.py chrome --mode light
+
 python behavior_analyzer.py --outbound-only discord
-python behavior_analyzer.py   # prompts for target
 ```
 
 On start you may be asked to **relaunch elevated**. Stop with **Ctrl+C**.
@@ -73,29 +102,29 @@ Written under `behavior_logs/`:
 | `events.jsonl` | Every event (JSON lines) |
 | `behavior_report.md` | Markdown report with sessions + sequence |
 | `behavior_report.html` | HTML report with severity flags |
+| `packets.log` | Per-packet text log (hex/ASCII + parses) |
+| `capture.pcap` | Raw PCAP for Wireshark |
 
 ### What it collects
 
 - **Process:** loaded modules/DLLs, cmdline, interesting env vars, child processes, thread/CPU/memory spikes
 - **Files:** newly opened files (`psutil`) + directory watching (`watchdog`) for configs/cookies/certs/DBs
 - **Registry:** polls Internet Settings / proxy / TCPIP-related keys for changes
-- **Network:** full connection metadata, DNS cache entries, heuristic SNI/host hints
+- **Network:** full connection metadata, DNS cache entries
+- **Packets (Scapy):** process-scoped capture — protocol, endpoints, size, TCP flags, payload preview, HTTP Host/UA, DNS queries, TLS SNI; highlights DNS/HTTP/HTTPS, large outbound payloads, suspicious ports
 - **Sequence:** events in the ~3s window before each new connection, grouped into sessions
 - **Memory (optional):** URL / domain / key-like string scan on connection (`ENABLE_MEMORY_STRINGS = True`)
-- **Highlights:** unusual DLLs, sensitive files then network, uncommon ports, tunnel/C2 host hints
+- **Highlights:** unusual DLLs, sensitive files then network, uncommon ports, tunnel/C2 host hints, exfil heuristics
 
 ### Optional deep hooks
 
-Enable in `behavior_config.py` and install extras:
-
 ```bash
-pip install scapy frida frida-tools
-# Scapy also needs Npcap: https://npcap.com/
+pip install frida frida-tools
 ```
 
-- `ENABLE_SCAPY_SNIFF` — packet sniff for DNS (and best-effort TLS-related traffic)
 - `ENABLE_FRIDA_HOOKS` — attach Frida and hook `connect()`
 - `ENABLE_ETW_TRACE` — notes ETW/ProcMon-style follow-up (full kernel ETW is external)
+- `ENABLE_SCAPY_SNIFF` — legacy lightweight DNS/443 sniffer (prefer `ENABLE_PACKET_CAPTURE`)
 
 ---
 

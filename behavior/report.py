@@ -80,6 +80,18 @@ def build_report(bus: EventBus, target: str) -> tuple[str, str]:
         mark = " **[!]**" if e.interesting else ""
         md_lines.append(f"- `{e.timestamp}` [{e.category}/{e.action}] {_md_escape(e.summary)}{mark}")
 
+    packet_events = [e for e in events if e.category == "packet"]
+    md_lines += ["", "## Packet capture highlights", ""]
+    if packet_events:
+        md_lines.append(f"- Interesting packet events: **{len(packet_events)}**")
+        md_lines.append(f"- Text log: `{cfg.PACKET_LOG_FILE}`")
+        md_lines.append(f"- PCAP (Wireshark): `{cfg.PACKET_PCAP_FILE}`")
+        md_lines.append("")
+        for e in packet_events[-40:]:
+            md_lines.append(f"- `{e.timestamp}` {_md_escape(e.summary)}")
+    else:
+        md_lines.append("- No packet highlights recorded (enable `ENABLE_PACKET_CAPTURE` + Npcap + Admin).")
+
     md = "\n".join(md_lines) + "\n"
     html_doc = _to_html(target, generated, events, sessions, session_scores)
     return md, html_doc
