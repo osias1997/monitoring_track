@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
 """
-Behavior Analyzer — reverse-engineering / behavioral analysis for Windows apps.
+Osidev Behavior Analyzer v2 — Windows behavioral reverse-engineering toolkit.
 
-Includes deep packet capture (Scapy) scoped to the target process endpoints.
+Capabilities:
+  - Process / DLL / signature / children / resource spikes
+  - File + registry activity
+  - DNS + deep packet capture (Scapy/Npcap)
+  - ETW-style WinEvent tracing (DNS / process / network)
+  - Optional Frida hooks (Winsock, WinHTTP, WinINet)
+  - Memory string extraction on new connections
+  - Correlation engine → behavior sessions
+  - Professional HTML report (Plotly charts) + Markdown
 
-Install:
-  pip install psutil watchdog colorama rich scapy
-  # Npcap (required for sniffing): https://npcap.com/
-  # optional: pip install frida frida-tools
+Install (Admin PowerShell recommended):
+  pip install -r requirements.txt
+  # Npcap: https://npcap.com/
+  # Optional: pip install frida frida-tools plotly
 
-Run as Administrator for best results:
-  python behavior_analyzer.py
+Run:
+  python behavior_analyzer.py --menu
   python behavior_analyzer.py chrome --mode full
-  python behavior_analyzer.py chrome --mode packets
-  python behavior_analyzer.py chrome --packets
-  python behavior_analyzer.py --mode light notepad
+  python behavior_analyzer.py chrome --mode deep   # enables Frida+ETW+memory if configured
 
-Modes:
-  full         — process + files + registry + DNS + packets
-  connections  — connection/process focus (no packet capture)
-  packets      — packet capture + connection correlation
-  light        — connections only (minimal side channels)
-
-Config toggles: behavior_config.py
+Config: behavior_config.py
 Tool made by Osidev
 """
 
@@ -36,12 +36,14 @@ from datetime import datetime
 
 import behavior_config as cfg
 from behavior.admin import ensure_admin_warning, is_admin
+from behavior.correlation import CorrelationEngine
+from behavior.etw_trace import EtwTracer
 from behavior.events import BehaviorEvent, EventBus, now_epoch
 from behavior.file_activity import DirectoryWatcher, OpenFilesPoller
+from behavior.frida_hooks import FridaManager
 from behavior.highlights import annotate_connection
 from behavior.memory_strings import maybe_memory_snapshot
 from behavior.network_deep import DnsTracker, OptionalPacketSniffer, connection_details
-from behavior.optional_hooks import try_etw_note, try_start_frida
 from behavior.packet_capture import ProcessPacketCapture
 from behavior.process_inspect import ProcessTracker
 from behavior.registry_watch import RegistryWatcher
@@ -52,19 +54,23 @@ from monitor_core import connection_key, find_matching_pids, shutdown_dns_pool
 MODES = {
     "full": {
         "process": True, "files": True, "registry": True, "dns": True,
-        "packets": True, "memory": None,  # None = follow config
+        "packets": True, "memory": None, "etw": True, "frida": None, "dll_sig": True,
+    },
+    "deep": {
+        "process": True, "files": True, "registry": True, "dns": True,
+        "packets": True, "memory": True, "etw": True, "frida": True, "dll_sig": True,
     },
     "connections": {
         "process": True, "files": False, "registry": False, "dns": True,
-        "packets": False, "memory": False,
+        "packets": False, "memory": False, "etw": False, "frida": False, "dll_sig": True,
     },
     "packets": {
         "process": True, "files": False, "registry": False, "dns": True,
-        "packets": True, "memory": False,
+        "packets": True, "memory": False, "etw": True, "frida": False, "dll_sig": False,
     },
     "light": {
         "process": False, "files": False, "registry": False, "dns": False,
-        "packets": False, "memory": False,
+        "packets": False, "memory": False, "etw": False, "frida": False, "dll_sig": False,
     },
 }
 
@@ -94,37 +100,45 @@ def _print(msg: str, style: str | None = None) -> None:
 
 
 def apply_mode(mode: str) -> dict:
-    """Overlay mode presets onto runtime feature flags (does not rewrite config file)."""
     preset = MODES.get(mode, MODES["full"])
-    runtime = {
+
+    def _tri(flag, cfg_val: bool) -> bool:
+        """None → follow config; True/False → force for this run."""
+        if flag is None:
+            return bool(cfg_val)
+        return bool(flag)
+
+    return {
         "process": preset["process"] and cfg.ENABLE_PROCESS_INSPECTION,
         "files": preset["files"] and cfg.ENABLE_FILE_ACTIVITY,
         "registry": preset["registry"] and cfg.ENABLE_REGISTRY_WATCH,
         "dns": preset["dns"] and cfg.ENABLE_DNS_TRACKING,
         "packets": preset["packets"] and cfg.ENABLE_PACKET_CAPTURE,
-        "memory": cfg.ENABLE_MEMORY_STRINGS if preset["memory"] is None else preset["memory"],
-        "frida": cfg.ENABLE_FRIDA_HOOKS,
+        "memory": _tri(preset["memory"], cfg.ENABLE_MEMORY_STRINGS),
+        "etw": preset["etw"] and cfg.ENABLE_ETW_TRACE,
+        "frida": _tri(preset["frida"], cfg.ENABLE_FRIDA_HOOKS),
+        "dll_sig": preset["dll_sig"] and cfg.ENABLE_DLL_SIGNATURE_CHECK,
         "legacy_scapy": cfg.ENABLE_SCAPY_SNIFF and not (preset["packets"] and cfg.ENABLE_PACKET_CAPTURE),
+        "correlate": cfg.ENABLE_CORRELATION_ENGINE,
     }
-    return runtime
 
 
 def interactive_menu() -> tuple[str, str, bool]:
-    """Simple main menu when launched without a target/mode."""
     print()
-    print("=" * 60)
-    print("  Osidev Monitoring — Behavior Analyzer")
+    print("=" * 64)
+    print("  Osidev Monitoring — Behavior Analyzer v" + getattr(cfg, "TOOL_VERSION", "2.0"))
     print("  Tool made by Osidev")
-    print("=" * 60)
-    print("  1) Full analysis (process + files + registry + packets)")
-    print("  2) Connections only")
-    print("  3) Packet-focused (capture + connection correlation)")
-    print("  4) Light (connections, minimal extras)")
-    print("  5) Quit")
-    print("=" * 60)
+    print("=" * 64)
+    print("  1) Full analysis")
+    print("  2) Deep RE (ETW + Frida + memory + packets)")
+    print("  3) Connections only")
+    print("  4) Packet-focused")
+    print("  5) Light")
+    print("  6) Quit")
+    print("=" * 64)
     choice = input("Select mode [1]: ").strip() or "1"
-    mode_map = {"1": "full", "2": "connections", "3": "packets", "4": "light"}
-    if choice == "5":
+    mode_map = {"1": "full", "2": "deep", "3": "connections", "4": "packets", "5": "light"}
+    if choice == "6":
         sys.exit(0)
     mode = mode_map.get(choice, "full")
     target = input("Application name or executable path: ").strip()
@@ -146,16 +160,31 @@ class BehaviorAnalyzer:
         self.dns = DnsTracker(self.bus)
         self.legacy_sniffer = OptionalPacketSniffer(self.bus)
         self.packets = ProcessPacketCapture(self.bus, on_packet=self._on_packet_console)
-        self._frida_attached: set[int] = set()
+        self.etw = EtwTracer(self.bus)
+        self.frida = FridaManager(self.bus)
+        self.correlation = CorrelationEngine()
         self._baseline_ready = False
         self._start_epoch = time.time()
+
+        # Wrap emit so every event is correlated live
+        if self.rt.get("correlate"):
+            original_emit = self.bus.emit
+
+            def emitting(event: BehaviorEvent) -> BehaviorEvent:
+                ev = original_emit(event)
+                try:
+                    self.correlation.ingest(ev)
+                except Exception:
+                    pass
+                return ev
+
+            self.bus.emit = emitting  # type: ignore
 
     def _on_packet_console(self, record: dict) -> None:
         hl = record.get("highlights") or []
         if not hl and not cfg.PACKET_EMIT_ALL_EVENTS:
             return
-        style = "red" if hl else "green"
-        _print(f"[PKT] {record.get('summary')}", style)
+        _print(f"[PKT] {record.get('summary')}", "red" if hl else "green")
 
     def start_side_channels(self) -> None:
         if self.rt["files"]:
@@ -163,26 +192,32 @@ class BehaviorAnalyzer:
             _print(f"[+] Directory watcher: {'on' if ok else 'off'}", "cyan" if ok else "yellow")
         if self.rt["packets"]:
             if not is_admin():
-                _print(
-                    "[!] Packet capture needs Administrator + Npcap (https://npcap.com/)",
-                    "red",
-                )
+                _print("[!] Packet capture needs Administrator + Npcap (https://npcap.com/)", "red")
             ok = self.packets.start()
-            _print(
-                f"[+] Packet capture: {'on' if ok else 'FAILED'}",
-                "cyan" if ok else "red",
-            )
+            _print(f"[+] Packet capture: {'on' if ok else 'FAILED'}", "cyan" if ok else "red")
             if ok:
                 _print(f"    log : {cfg.PACKET_LOG_FILE.resolve()}", "cyan")
                 _print(f"    pcap: {cfg.PACKET_PCAP_FILE.resolve()}", "cyan")
         elif self.rt["legacy_scapy"]:
             self.legacy_sniffer.start()
-        try_etw_note(self.bus)
+        if self.rt["etw"]:
+            if not is_admin():
+                _print("[!] ETW works best as Administrator", "yellow")
+            ok = self.etw.start()
+            _print(f"[+] ETW tracing: {'on' if ok else 'off'}", "cyan" if ok else "yellow")
+        if self.rt["frida"]:
+            _print("[+] Frida hooks armed (attach on process sight)", "cyan")
+        if self.rt["memory"]:
+            _print("[+] Memory string extraction on connections", "cyan")
+        if self.rt["dll_sig"]:
+            _print("[+] DLL Authenticode validation enabled", "cyan")
 
     def stop(self) -> None:
         self.dir_watcher.stop()
         self.legacy_sniffer.stop()
         self.packets.stop()
+        self.etw.stop()
+        self.frida.detach_all()
 
     def _session_id(self, rec: dict) -> str:
         remote = rec.get("remote") or "local"
@@ -192,11 +227,12 @@ class BehaviorAnalyzer:
         epoch = now_epoch()
         sid = self._session_id(rec)
         flags = annotate_connection(rec) if cfg.ENABLE_HIGHLIGHTS else []
-        before = self.bus.recent_before(epoch, seconds=3.0) if cfg.ENABLE_SEQUENCE_ANALYSIS else []
+        before = self.bus.recent_before(epoch, seconds=cfg.CORRELATION_WINDOW_SEC) if cfg.ENABLE_SEQUENCE_ANALYSIS else []
 
         details = dict(rec)
         details["flags"] = flags
         details["modules_sample"] = (proc_snap or {}).get("modules", [])[:25]
+        details["module_signatures"] = (proc_snap or {}).get("module_signatures", [])[:20]
         details["cmdline"] = (proc_snap or {}).get("cmdline")
         details["environ_interesting"] = (proc_snap or {}).get("environ_interesting")
         details["children"] = (proc_snap or {}).get("children")
@@ -209,7 +245,6 @@ class BehaviorAnalyzer:
             {"action": e.action, "summary": e.summary, "timestamp": e.timestamp}
             for e in before
         ]
-        # Correlate recent interesting packets with this connection
         remote_ip = rec.get("remote_ip")
         related_pkts = [
             p for p in self.packets.highlights[-30:]
@@ -246,16 +281,16 @@ class BehaviorAnalyzer:
                 session_id=sid,
             ))
 
-        style = "red" if flags or related_pkts else "green"
         _print(
             f"[{rec.get('timestamp', '')}] CONN  "
             f"{rec.get('process')}({rec.get('pid')})  "
             f"{rec.get('local')} -> {rec.get('remote')}  "
             f"{rec.get('protocol')}/{rec.get('status')}  "
             f"{('FLAGS:' + ','.join(flags)) if flags else ''}",
-            style,
+            "red" if flags or related_pkts else "green",
         )
 
+        # Memory strings on every new connection when enabled
         if self.rt["memory"]:
             maybe_memory_snapshot(
                 self.bus, int(rec["pid"]), str(rec.get("process") or ""), sid
@@ -270,11 +305,19 @@ class BehaviorAnalyzer:
         pids = set(matches.keys())
         if self.rt["packets"]:
             self.packets.update_process_endpoints(pids)
+        if self.rt["etw"]:
+            self.etw.update_pids(pids)
 
         snaps: dict[int, dict] = {}
         for pid, name in matches.items():
             if self.rt["process"]:
-                snaps[pid] = self.process_tracker.poll(pid, name)
+                # Temporarily honor dll_sig toggle via config overlay
+                prev = cfg.ENABLE_DLL_SIGNATURE_CHECK
+                cfg.ENABLE_DLL_SIGNATURE_CHECK = bool(self.rt["dll_sig"])
+                try:
+                    snaps[pid] = self.process_tracker.poll(pid, name)
+                finally:
+                    cfg.ENABLE_DLL_SIGNATURE_CHECK = prev
                 try:
                     import psutil
                     psutil.Process(pid).cpu_percent(interval=0.0)
@@ -282,9 +325,8 @@ class BehaviorAnalyzer:
                     pass
             if self.rt["files"]:
                 self.open_files.poll(pid, name)
-            if self.rt["frida"] and pid not in self._frida_attached:
-                if try_start_frida(self.bus, pid):
-                    self._frida_attached.add(pid)
+            if self.rt["frida"]:
+                self.frida.attach(pid, name)
 
         if self.rt["registry"]:
             self.registry.poll()
@@ -331,27 +373,18 @@ class BehaviorAnalyzer:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Osidev behavioral analysis / packet monitor for Windows apps."
+        description="Osidev Windows behavioral reverse-engineering analyzer."
     )
-    p.add_argument("app", nargs="?", default=cfg.DEFAULT_TARGET or None,
-                   help="Process name or executable path")
-    p.add_argument(
-        "--mode",
-        choices=sorted(MODES.keys()),
-        default=None,
-        help="Monitoring mode: full | connections | packets | light",
-    )
-    p.add_argument("-o", "--outbound-only", action="store_true",
-                   default=cfg.OUTBOUND_ONLY,
-                   help="Only analyze outbound connections")
-    p.add_argument("--packets", action="store_true",
-                   help="Force-enable packet capture for this run")
-    p.add_argument("--no-packets", action="store_true",
-                   help="Force-disable packet capture for this run")
-    p.add_argument("--menu", action="store_true",
-                   help="Show interactive mode menu")
-    p.add_argument("--no-elevate-prompt", action="store_true",
-                   help="Do not ask to relaunch as Administrator")
+    p.add_argument("app", nargs="?", default=cfg.DEFAULT_TARGET or None)
+    p.add_argument("--mode", choices=sorted(MODES.keys()), default=None)
+    p.add_argument("-o", "--outbound-only", action="store_true", default=cfg.OUTBOUND_ONLY)
+    p.add_argument("--packets", action="store_true")
+    p.add_argument("--no-packets", action="store_true")
+    p.add_argument("--etw", action="store_true", help="Force-enable ETW for this run")
+    p.add_argument("--frida", action="store_true", help="Force-enable Frida for this run")
+    p.add_argument("--memory", action="store_true", help="Force memory string dumps on connections")
+    p.add_argument("--menu", action="store_true")
+    p.add_argument("--no-elevate-prompt", action="store_true")
     return p.parse_args()
 
 
@@ -359,22 +392,17 @@ def main() -> None:
     args = parse_args()
 
     if args.menu or (not args.app and args.mode is None and sys.stdin.isatty()):
-        # Interactive path when no app given, or --menu
         if args.menu or not args.app:
             target, mode, outbound = interactive_menu()
             if not target:
                 print("No target specified.", file=sys.stderr)
                 sys.exit(1)
-            args.app = target
-            args.mode = mode
-            args.outbound_only = outbound
+            args.app, args.mode, args.outbound_only = target, mode, outbound
 
     if cfg.WARN_IF_NOT_ADMIN:
         ensure_admin_warning(offer_elevation=cfg.OFFER_ELEVATION and not args.no_elevate_prompt)
 
-    target = (args.app or "").strip()
-    if not target:
-        target = input("Application name or executable path: ").strip()
+    target = (args.app or "").strip() or input("Application name or executable path: ").strip()
     if not target:
         print("No target specified.", file=sys.stderr)
         sys.exit(1)
@@ -385,17 +413,22 @@ def main() -> None:
         runtime["packets"] = True
     if args.no_packets:
         runtime["packets"] = False
+    if args.etw:
+        runtime["etw"] = True
+        cfg.ENABLE_ETW_TRACE = True
+    if args.frida:
+        runtime["frida"] = True
+        cfg.ENABLE_FRIDA_HOOKS = True
+    if args.memory:
+        runtime["memory"] = True
+        cfg.ENABLE_MEMORY_STRINGS = True
 
-    # Temporary override config flag used by packet module
-    if runtime["packets"]:
-        cfg.ENABLE_PACKET_CAPTURE = True
-    else:
-        cfg.ENABLE_PACKET_CAPTURE = False
+    cfg.ENABLE_PACKET_CAPTURE = bool(runtime["packets"])
 
     cfg.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     _print("=" * 78, "cyan")
-    _print("  BEHAVIOR ANALYZER", "cyan")
+    _print("  OSIDEV BEHAVIOR ANALYZER v" + getattr(cfg, "TOOL_VERSION", "2.0"), "cyan")
     _print(f"  {cfg.TOOL_SIGNATURE}", "cyan")
     _print(f"  Target     : {target}")
     _print(f"  Mode       : {mode}")
@@ -403,14 +436,16 @@ def main() -> None:
     _print(f"  Logs       : {cfg.LOG_DIR.resolve()}")
     _print(
         "  Features   : "
-        f"proc={runtime['process']} files={runtime['files']} "
-        f"reg={runtime['registry']} dns={runtime['dns']} "
-        f"packets={runtime['packets']} mem={runtime['memory']}",
+        f"proc={runtime['process']} files={runtime['files']} reg={runtime['registry']} "
+        f"dns={runtime['dns']} packets={runtime['packets']} mem={runtime['memory']} "
+        f"etw={runtime['etw']} frida={runtime['frida']} dll_sig={runtime['dll_sig']}",
         "cyan",
     )
     if runtime["packets"]:
         _print("  Npcap      : required — https://npcap.com/", "yellow")
-    _print("  Stop       : Ctrl+C  (auto-report on exit)", "cyan")
+    if not is_admin():
+        _print("  WARNING    : Not elevated — some ETW/packet/memory features limited", "red")
+    _print("  Stop       : Ctrl+C  (auto professional report on exit)", "cyan")
     _print("=" * 78, "cyan")
 
     analyzer = BehaviorAnalyzer(target, outbound_only=args.outbound_only, runtime=runtime)
@@ -419,25 +454,25 @@ def main() -> None:
         category="system",
         action="monitor_start",
         summary=f"Started behavior monitor for '{target}' (mode={mode})",
-        details={"admin": is_admin(), "mode": mode, "runtime": runtime},
+        details={"admin": is_admin(), "mode": mode, "runtime": runtime, "version": getattr(cfg, "TOOL_VERSION", "2.0")},
     ))
 
     try:
         while True:
             if cfg.PACKET_SNIFF_TIMEOUT and runtime["packets"]:
                 if time.time() - analyzer._start_epoch >= cfg.PACKET_SNIFF_TIMEOUT:
-                    _print(
-                        f"[!] PACKET_SNIFF_TIMEOUT ({cfg.PACKET_SNIFF_TIMEOUT}s) reached — stopping",
-                        "yellow",
-                    )
+                    _print(f"[!] PACKET_SNIFF_TIMEOUT ({cfg.PACKET_SNIFF_TIMEOUT}s) reached", "yellow")
                     break
             analyzer.poll_once()
             time.sleep(cfg.POLL_INTERVAL_SEC)
     except KeyboardInterrupt:
-        _print("\n[!] Stopping… generating reports", "magenta")
+        _print("\n[!] Stopping… correlating sessions & generating reports", "magenta")
     finally:
         analyzer.stop()
         if cfg.AUTO_REPORT_ON_EXIT:
+            # Final correlation rebuild for report consistency
+            if runtime.get("correlate"):
+                analyzer.correlation.rebuild(analyzer.bus.snapshot())
             md, html_path = write_reports(analyzer.bus, target)
             _print(f"[+] Markdown report: {md}", "green")
             _print(f"[+] HTML report    : {html_path}", "green")
@@ -445,6 +480,7 @@ def main() -> None:
                 _print(f"[+] Packet log     : {cfg.PACKET_LOG_FILE.resolve()}", "green")
                 _print(f"[+] PCAP file      : {cfg.PACKET_PCAP_FILE.resolve()}", "green")
                 _print(f"[+] Packets kept   : {analyzer.packets.packet_count}", "green")
+            _print(f"[+] Sessions       : {len(analyzer.correlation.sessions)}", "green")
         shutdown_dns_pool()
 
 

@@ -47,6 +47,13 @@ def score_session(events: list[BehaviorEvent]) -> dict[str, Any]:
     if any(e.category == "memory" and (e.details.get("secrets") or e.details.get("urls")) for e in events):
         flags.append("memory_iocs")
 
+    if any(e.action == "dll_unsigned_or_untrusted" for e in events):
+        flags.append("unsigned_or_untrusted_dll")
+    if "frida" in categories and "network" in categories:
+        flags.append("frida_api_then_network")
+    if "etw" in categories and "network" in categories:
+        flags.append("etw_then_network")
+
     # Packet-capture driven signals
     packet_events = [e for e in events if e.category == "packet"]
     if any("dns_request" in (e.details.get("highlights") or []) for e in packet_events):
@@ -71,6 +78,8 @@ def score_session(events: list[BehaviorEvent]) -> dict[str, Any]:
         "possible_data_exfil" in flags
         or "sensitive_file_then_network" in flags
         or "suspicious_port_traffic" in flags
+        or "unsigned_or_untrusted_dll" in flags
+        or "frida_api_then_network" in flags
         or any(f.startswith("suspicious_host_hint") for f in flags)
     ):
         severity = "high"

@@ -6,6 +6,7 @@ from typing import Any
 
 import psutil
 
+import behavior_config as cfg
 from .events import BehaviorEvent, EventBus
 
 
@@ -118,22 +119,51 @@ class ProcessTracker:
                 ))
         self._known_children[pid] = child_pids
 
-        # New modules
+        # New modules (+ optional Authenticode validation)
         mods = set(snap.get("modules", []))
         prev_mods = self._known_modules.get(pid)
         if prev_mods is not None:
-            for m in sorted(mods - prev_mods):
+            fresh = sorted(mods - prev_mods)
+            sig_map = {}
+            if fresh:
+                try:
+                    from .dll_signer import enrich_modules, unsigned_or_untrusted
+                    enriched = enrich_modules(fresh, limit=12)
+                    sig_map = {e.get("path"): e for e in enriched if e.get("path")}
+                    for bad in unsigned_or_untrusted(enriched):
+                        self.bus.emit(BehaviorEvent(
+                            category="process",
+                            action="dll_unsigned_or_untrusted",
+                            summary=f"Unsigned/untrusted module: {bad.get('path')} ({bad.get('Status')})",
+                            pid=pid,
+                            process=process_name,
+                            details=bad,
+                            interesting=True,
+                        ))
+                except Exception:
+                    sig_map = {}
+            for m in fresh:
                 unusual = self._unusual_dll(m)
+                sig = sig_map.get(m) or {}
+                interesting = unusual or bool(sig.get("suspicious"))
                 self.bus.emit(BehaviorEvent(
                     category="process",
                     action="module_loaded",
                     summary=f"Module loaded: {m}",
                     pid=pid,
                     process=process_name,
-                    details={"path": m, "unusual": unusual},
-                    interesting=unusual,
+                    details={"path": m, "unusual": unusual, "signature": sig},
+                    interesting=interesting,
                 ))
         self._known_modules[pid] = mods
+
+        # Also attach a signature sample on first sight of the process
+        if prev_mods is None and cfg.ENABLE_DLL_SIGNATURE_CHECK:
+            try:
+                from .dll_signer import enrich_modules
+                snap["module_signatures"] = enrich_modules(list(mods), limit=20)
+            except Exception:
+                snap["module_signatures"] = []
 
         # Resource spikes
         cpu = float(snap.get("cpu_percent") or 0.0)
